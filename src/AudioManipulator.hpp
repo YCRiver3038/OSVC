@@ -40,7 +40,7 @@ class AudioManipulator {
         PaError stopStatus = paNoError;
         PaError closeStatus = paNoError;
         const PaDeviceInfo* devInfo = nullptr;
-        PaStreamParameters parameters = {0};
+        PaStreamParameters parameters = {};
         double fs = 44100;
         bool output = false;
         int nCH = 0;
@@ -94,6 +94,11 @@ class AudioManipulator {
 
             parameters.device = index;
             devInfo = Pa_GetDeviceInfo(index);
+            if (!devInfo) {
+                printf("Audio manipulator initialization error\n");
+                initStatus = -16384;
+                return;
+            }
             fs = fSample;
             
             zdlength = chunkLength*channels;
