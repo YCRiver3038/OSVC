@@ -1,5 +1,5 @@
 #include "main.h"
-#include "nlohmann/json.hpp"
+//#include "nlohmann/json.hpp"
 #include "network.hpp"
 
 std::atomic<bool> KeyboardInterrupt;
@@ -648,7 +648,9 @@ int main(int argc, char* argv[]) {
 
     printf("\x1b[2J\n");
     std::thread com(comthr);
+#if defined(__linux__) || defined(__APPLE__)
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
+#endif
     aIn.start();
     aOut.start();
     aOut.pause();
@@ -792,6 +794,8 @@ int main(int argc, char* argv[]) {
         delete rbst1;
     }
     com.join();
+#if defined(__linux__) || defined(__APPLE__)
     rcomt.join();
+#endif
     return 0;
 }
