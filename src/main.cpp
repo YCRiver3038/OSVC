@@ -1,38 +1,11 @@
 #include "main.h"
-#include "network.hpp"
 #include "nlohmann/json.hpp"
+#include "network.hpp"
 
 std::atomic<bool> KeyboardInterrupt;
 void kbiHandler(int signo) {
     KeyboardInterrupt.store(true);
 }
-
-enum {
-    SET_PITCH,
-    SET_FORMANT,
-    SET_TR,
-    SET_TR_PITCH_FOLLOW,
-    SET_TR_PITCH_CONSTANT,
-    SET_TR_CHANGE_DURATION,
-    QUERY_PITCH,
-    QUERY_FORMANT,
-    QUERY_TR,
-    QUERY_INPUT_LEVEL_DB,
-    QUERY_INPUT_LEVEL_NUM,
-    QUERY_OUTPUT_LEVEL_DB,
-    QUERY_OUTPUT_LEVEL_NUM,
-    QUERY_LATENCY_MSEC,
-    QUERY_LATENCY_SAMPLES,
-    QUERY_INPUT_DEVICE_INFO,
-    QUERY_OUTPUT_DEVICE_INFO,
-    INFO_PITCH,
-    INFO_FORMANT,
-    INFO_TR,
-    REC_START,
-    REC_STO,
-    MODE_THRU,
-    MODE_PROCESSED
-} sParams;
 
 template <typename FDTYPE, typename MDTYPE>
 void printRatBar(FDTYPE fillLength, MDTYPE maxLength,
@@ -110,6 +83,10 @@ void printToPlace(int row, int col, const char* txt, size_t length) {
 double rbPitchScale = 1.0;
 double rbFormantScale = 1.0;
 double rbTimeRatio = 1.0;
+AudioData iPeak;
+AudioData oPeak;
+bool isTHRU = false;
+
 void comthr() {
     std::string command;
     std::vector<std::string> comlist;
@@ -159,6 +136,206 @@ void comthr() {
     }
 }
 
+#if defined(__linux__) || defined(__APPLE__)
+enum {
+    SET_PITCH,   // value: float32
+    SET_FORMANT, // value: float32
+    SET_TR,      // value: float32
+    SET_TR_PITCH_FOLLOW,    // No following value
+    SET_TR_PITCH_CONSTANT,  // No following value
+    SET_TR_CHANGE_DURATION, // value: float32
+    QUERY_PITCH,   // No following value
+    QUERY_FORMANT, // No following value
+    QUERY_TR,      // No following value
+    QUERY_INPUT_LEVEL_DB,     // No following value
+    QUERY_INPUT_LEVEL_NUM,    // No following value
+    QUERY_OUTPUT_LEVEL_DB,    // No following value
+    QUERY_OUTPUT_LEVEL_NUM,   // No following value
+    QUERY_LATENCY_MSEC,       // No following value
+    QUERY_LATENCY_SAMPLES,    // No following value
+    QUERY_INPUT_DEVICE,  // No following value
+    QUERY_OUTPUT_DEVICE, // No following value
+    INFO_PITCH,     // value: float32
+    INFO_FORMANT,   // value: float32
+    INFO_TR,        // value: float32
+    INFO_INPUT_LEVEL_DB,     // value: float32
+    INFO_INPUT_LEVEL_NUM,    // value: float32
+    INFO_OUTPUT_LEVEL_DB,    // value: float32
+    INFO_OUTPUT_LEVEL_NUM,   // value: float32
+    INFO_INPUT_DEVICE,  // value: Text/json
+    INFO_OUTPUT_DEVICE, // value: Text/json
+    REC_START,      // No following value
+    REC_STOP,        // No following value
+    MODE_THRU,      // No following value
+    MODE_PROCESSED, //No following value
+    STREAM_DATA,    //value: float32 array
+    STREAM_LENGTH   // value: unsigned int32
+} sParams; // sParams itself is transmitted in format uint8
+
+typedef union {
+    uint8_t u8[4];
+    uint8_t u16[2];
+    uint32_t u32;
+    float f32;
+} trdtype;
+
+/*
+Protocol: UDP
+Data Format:
+[sParams][VALUE][sParams][VALUE]...
+
+VALUE: variable length
+see comment section of sParams definitions 
+
+Sending or receiving illegal format may lead to catastrophic behavior.
+*/
+void rcom(std::string addr, std::string port) {
+    network rc(addr, port, SOCK_DGRAM);
+    uint8_t rbuf[16384] = {};
+    uint8_t sbuf[16384] = {};
+    trdtype rdata;
+    trdtype tdata;
+    ssize_t rdstatus = 0;
+    bool tr_pitch_follow = false;
+
+    tdata.u32 = 0;
+    rdata.u32 = 0;
+    rdstatus = rc.nw_bind_and_listen();
+    printf("bind status: %d\n", rdstatus);
+    while (!KeyboardInterrupt.load()) {
+        rdstatus = rc.recv_data(rbuf, 16384);
+        if (rdstatus <= 0) {
+            break;
+        }
+        for (ssize_t rctr=0; rctr < rdstatus;) {
+            switch (rbuf[rctr]) {
+                case SET_PITCH: // value: float32
+                    memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
+                    rbPitchScale = (double)rdata.f32;
+                    rctr += 5;
+                    break;
+                case SET_FORMANT: // value: float32
+                    memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
+                    rbFormantScale = (double)rdata.f32;
+                    rctr += 5;
+                    break;
+                case SET_TR: // value: float32
+                    memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
+                    rbTimeRatio = (double)rdata.f32;
+                    if (tr_pitch_follow) {
+                        rbPitchScale = (rbTimeRatio > 0.0) ? (1/rbTimeRatio) : 1.0;
+                    }
+                    rctr += 5;
+                    break;
+                case SET_TR_PITCH_FOLLOW: // no following value
+                    tr_pitch_follow = true;
+                    rctr++;
+                    break;
+                case SET_TR_PITCH_CONSTANT: // no following value
+                    tr_pitch_follow = false;
+                    rctr++;
+                    break;
+                case SET_TR_CHANGE_DURATION: // value: float32
+                    rctr += 5;
+                    break;
+                case QUERY_PITCH:   // No following value
+                    sbuf[0] = (uint8_t)INFO_PITCH;
+                    tdata.f32 = (float)rbPitchScale;
+                    memcpy(&(sbuf[1]), tdata.u8, 4);
+                    if (rc.send_data(sbuf, 5) <= 0){
+                        printf("Send error.\n");
+                    }
+                    rctr++;
+                    break;
+                case QUERY_FORMANT: // No following value
+                    sbuf[0] = (uint8_t)INFO_FORMANT;
+                    tdata.f32 = (float)rbFormantScale;
+                    memcpy(&(sbuf[1]), tdata.u8, 4);
+                    if (rc.send_data(sbuf, 5) <= 0){
+                        printf("Send error.\n");
+                    }
+                    rctr++;
+                    break;
+                case QUERY_TR: // No following value
+                    sbuf[0] = (uint8_t)INFO_TR;
+                    tdata.f32 = (float)rbTimeRatio;
+                    memcpy(&(sbuf[1]), tdata.u8, 4);
+                    if (rc.send_data(sbuf, 5) <= 0){
+                        printf("Send error.\n");
+                    }
+                    rctr++;
+                    break;
+                case QUERY_INPUT_LEVEL_DB: // No following value
+                    sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_DB;
+                    tdata.f32 = 20.0*log10f(iPeak.f32);
+                    memcpy(&(sbuf[1]), tdata.u8, 4);
+                    if (rc.send_data(sbuf, 5) <= 0){
+                        printf("Send error.\n");
+                    }
+                    rctr++;
+                    break;
+                case QUERY_INPUT_LEVEL_NUM: // No following value
+                    sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_NUM;
+                    tdata.f32 =(float)iPeak.f32;
+                    memcpy(&(sbuf[1]), tdata.u8, 4);
+                    if (rc.send_data(sbuf, 5) <= 0){
+                        printf("Send error.\n");
+                    }
+                    rctr++;
+                    break;
+                case QUERY_OUTPUT_LEVEL_DB: // No following value
+                    sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_DB;
+                    tdata.f32 = 20.0*log10f(oPeak.f32);
+                    memcpy(&(sbuf[1]), tdata.u8, 4);
+                    if (rc.send_data(sbuf, 5) <= 0){
+                        printf("Send error.\n");
+                    }
+                    rctr++;
+                    break;
+                case QUERY_OUTPUT_LEVEL_NUM: // No following value
+                    sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_NUM;
+                    tdata.f32 =(float)oPeak.f32;
+                    memcpy(&(sbuf[1]), tdata.u8, 4);
+                    if (rc.send_data(sbuf, 5) <= 0){
+                        printf("Send error.\n");
+                    }
+                    rctr++;
+                    break;
+                case QUERY_LATENCY_MSEC: // No following value
+                    rctr++;
+                    break;
+                case QUERY_LATENCY_SAMPLES: // No following value
+                    rctr++;
+                    break;
+                case QUERY_INPUT_DEVICE: // No following value
+                    rctr++;
+                    break;
+                case QUERY_OUTPUT_DEVICE: // No following value
+                    rctr++;
+                    break;
+                case REC_START: // No following value
+                    rctr++;
+                    break;
+                case REC_STOP: // No following value
+                    rctr++;
+                    break;
+                case MODE_THRU: // No following value
+                    rctr++;
+                    break;
+                case MODE_PROCESSED: //No following value
+                    rctr++;
+                    break;
+                case STREAM_LENGTH: // value: unsigned int32
+                    rctr += 5;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+}
+#endif
+
 int main(int argc, char* argv[]) {
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
@@ -194,7 +371,6 @@ int main(int argc, char* argv[]) {
     bool listDevices = false;
     bool showBufferHealth = false;
     bool isMonoMode = false;
-    bool isTHRU = false;
     int getoptStatus = 0;
     int optionIndex = 0;
     int iDeviceIndex = 0;
@@ -407,8 +583,6 @@ int main(int argc, char* argv[]) {
     bool isInit = false;
     int showCount = 0;
     bool aInRestarted = true;
-    AudioData iPeak;
-    AudioData oPeak;
     iPeak.f32 = 0.0;
     oPeak.f32 = 0.0;
     uint32_t ioChannel = aOut.getChannelCount();
@@ -426,6 +600,7 @@ int main(int argc, char* argv[]) {
 
     printf("\x1b[2J\n");
     std::thread com(comthr);
+    std::thread rcomt(rcom, std::string("100.71.35.147"), std::string("60233"));
     aIn.start();
     aOut.start();
     aOut.pause();
@@ -455,18 +630,20 @@ int main(int argc, char* argv[]) {
                 aInEmptyCount++;
             }
 
-            for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
-                if (ioFormat=="8") {
-                    updateMax((float)tdarr[ctr].s8[0] / 128.0, &(iPeak.f32));
-                }
-                if (ioFormat=="16") {
-                    updateMax((float)tdarr[ctr].s16[0] / 32768.0, &(iPeak.f32));
-                }
-                if (ioFormat=="32") {
-                    updateMax((float)tdarr[ctr].s32 / 2147483647.0, &(iPeak.f32));
-                }
-                if (ioFormat=="f32") {
-                    updateMax(tdarr[ctr].f32, &(iPeak.f32));
+            if (showBufferHealth) {
+                for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
+                    if (ioFormat=="8") {
+                        updateMax((float)tdarr[ctr].s8[0] / 128.0, &(iPeak.f32));
+                    }
+                    if (ioFormat=="16") {
+                        updateMax((float)tdarr[ctr].s16[0] / 32768.0, &(iPeak.f32));
+                    }
+                    if (ioFormat=="32") {
+                        updateMax((float)tdarr[ctr].s32 / 2147483647.0, &(iPeak.f32));
+                    }
+                    if (ioFormat=="f32") {
+                        updateMax(tdarr[ctr].f32, &(iPeak.f32));
+                    }
                 }
             }
             if (!monoInput) {
@@ -537,18 +714,20 @@ int main(int argc, char* argv[]) {
             } else {
                 AudioManipulator::interleave((AudioData**)deinterleaved, tdarr, ioChunkLength);
                 aOut.write(tdarr, ioChunkLength);
-                for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
-                    if (ioFormat=="8") {
-                        updateMax((float)tdarr[ctr].s8[0] / 128.0, &(oPeak.f32));
-                    }
-                    if (ioFormat=="16") {
-                        updateMax((float)tdarr[ctr].s16[0] / 32768.0, &(oPeak.f32));
-                    }
-                    if (ioFormat=="32") {
-                        updateMax((float)tdarr[ctr].s32 / 2147483647.0, &(oPeak.f32));
-                    }
-                    if (ioFormat=="f32") {
-                        updateMax(tdarr[ctr].f32, &(oPeak.f32));
+                if (showBufferHealth) {
+                    for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
+                        if (ioFormat=="8") {
+                            updateMax((float)tdarr[ctr].s8[0] / 128.0, &(oPeak.f32));
+                        }
+                        if (ioFormat=="16") {
+                            updateMax((float)tdarr[ctr].s16[0] / 32768.0, &(oPeak.f32));
+                        }
+                        if (ioFormat=="32") {
+                            updateMax((float)tdarr[ctr].s32 / 2147483647.0, &(oPeak.f32));
+                        }
+                        if (ioFormat=="f32") {
+                            updateMax(tdarr[ctr].f32, &(oPeak.f32));
+                        }
                     }
                 }
             }
@@ -585,6 +764,7 @@ int main(int argc, char* argv[]) {
     delete[] rbResult;
     delete rbst1;
     com.join();
+    rcomt.join();
     printf("\x1b[2J\n");
     return 0;
 }

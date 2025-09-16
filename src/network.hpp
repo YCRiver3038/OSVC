@@ -1,6 +1,6 @@
 #ifndef NETWORK_H_INCLUDED
 #define NETWORK_H_INCLUDED
-
+#if defined(__linux__) || defined(__APPLE__)
 /*
   network (socket接続周辺処理をまとめたクラス)
   ヘッダーファイル 
@@ -19,7 +19,7 @@
 #include "fcntl.h"
 #include "netinet/ip.h"
 
-constexpr uint32_t EM_TIMEOUT_LENGTH = 100;
+constexpr uint32_t EM_TIMEOUT_LENGTH = 100; // default: 100[msec]
 constexpr uint32_t EM_RECVBUF_LENGTH_DEFAULT = 32767;
 constexpr int32_t EM_CONNECTION_CLOSED  = -250;
 constexpr int32_t EM_CONNECTION_TIMEDOUT = -240;
@@ -59,7 +59,7 @@ class network {
     int nw_accept(struct sockaddr* peer_addr=nullptr, socklen_t* peer_addr_len=nullptr);
     void nw_close();
     //size_t resize_buffer(size_t bsize);
-    template <typename DTYPE> ssize_t recv_data(DTYPE* data_dest, ssize_t n_elm, struct sockaddr* src_addr_dest=nullptr, socklen_t* src_addr_len_dest=nullptr, bool nopoll = false);
+    template <typename DTYPE> ssize_t recv_data(DTYPE* data_dest, ssize_t n_elm, struct sockaddr* src_addr_dest=nullptr, socklen_t* src_addr_len_dest=nullptr, bool nopoll=false);
 
     template<typename SDTYPE> ssize_t send_data_common(SDTYPE* data_arr, const size_t sb_size, const struct sockaddr* dest_addr=nullptr, const socklen_t dest_addr_len=0);
     ssize_t send_data( uint8_t* data_arr, const size_t sb_size, const struct sockaddr* dest_addr=nullptr, const socklen_t dest_addr_len=0);
@@ -205,4 +205,5 @@ class fd_network : public network {
   public:
     fd_network(int init_fd);
 };
+#endif
 #endif

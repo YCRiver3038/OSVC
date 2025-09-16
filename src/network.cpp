@@ -1,3 +1,4 @@
+#if defined(__linux__) || defined(__APPLE__)
 #include "network.hpp"
 
 /* force return request variable */
@@ -450,3 +451,5 @@ fd_network::fd_network(int init_fd){
   recv_pollfd.fd = init_fd;
   send_pollfd.fd = init_fd;
 }
+
+#endif
