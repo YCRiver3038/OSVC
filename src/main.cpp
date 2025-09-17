@@ -2,6 +2,8 @@
 //#include "nlohmann/json.hpp"
 #include "network.hpp"
 
+#include "remocon.h"
+
 std::atomic<bool> KeyboardInterrupt;
 void kbiHandler(int signo) {
     KeyboardInterrupt.store(true);
@@ -89,278 +91,223 @@ std::atomic<float> iPeak = 0;
 std::atomic<float> oPeak = 0;
 std::atomic<bool> isTHRU = false;
 
-void comthr() {
-    std::string command;
-    std::vector<std::string> comlist;
-    char msg[256] = {};
-    while (!KeyboardInterrupt.load()){
-        printToPlace(1, 1, "OSVC >", 6);
-        std::cin >> command;
-        for (std::string com : comlist) {
-            printf("%s | ", com.c_str());
-        }
-        snprintf(msg, 256, "input: %s", command.c_str());
-        printToPlace(2, 1, msg, 256);
-        for (size_t ctrc=0; ctrc<command.length(); ctrc++) {
-            command.at(ctrc) = std::tolower(command.at(ctrc));
-        }
-        if (command == "q") {
-            KeyboardInterrupt.store(true);
-        }
-        if (command == "p") {
-            printToPlace(3, 1, "Pitch scale > ", 15);
-            std::cin >> command;
-            try {
-                rbPitchScale = std::stod(command.c_str());
-            } catch (const std::invalid_argument& e) {
-                printToPlace(4, 1, "Invalid value", 14);
-            }   
-        }
-        if (command == "f") {
-            printToPlace(3, 1, "Formant scale > ", 17);
-            std::cin >> command;
-            try {
-                rbFormantScale = std::stod(command.c_str());
-            } catch (const std::invalid_argument& e) {
-                printToPlace(4, 1, "Invalid value", 14);
-            }   
-        }
-        if (command == "t") {
-            printToPlace(3, 1, "Time ratio > ", 14);
-            std::cin >> command;
-            try {
-                rbTimeRatio = (std::stod(command.c_str()) > 0.0) ? std::stod(command.c_str()) : 1.0;
-            } catch (const std::invalid_argument& e) {
-                printToPlace(4, 1, "Invalid value", 14);
-            }
-        }
-        command.clear();
-    }
-}
-
-#if defined(__linux__) || defined(__APPLE__)
-enum {
-    SET_PITCH,   // value: float32
-    SET_FORMANT, // value: float32
-    SET_TR,      // value: float32
-    SET_TR_PITCH_FOLLOW,    // No following value
-    SET_TR_PITCH_CONSTANT,  // No following value
-    SET_TR_CHANGE_DURATION, // value: float32
-    QUERY_PITCH,   // No following value
-    QUERY_FORMANT, // No following value
-    QUERY_TR,      // No following value
-    QUERY_INPUT_LEVEL_DB,     // No following value
-    QUERY_INPUT_LEVEL_NUM,    // No following value
-    QUERY_OUTPUT_LEVEL_DB,    // No following value
-    QUERY_OUTPUT_LEVEL_NUM,   // No following value
-    QUERY_LATENCY_MSEC,       // No following value
-    QUERY_LATENCY_SAMPLES,    // No following value
-    QUERY_INPUT_DEVICE,  // No following value
-    QUERY_OUTPUT_DEVICE, // No following value
-    INFO_PITCH,     // value: float32
-    INFO_FORMANT,   // value: float32
-    INFO_TR,        // value: float32
-    INFO_INPUT_LEVEL_DB,     // value: float32
-    INFO_INPUT_LEVEL_NUM,    // value: float32
-    INFO_OUTPUT_LEVEL_DB,    // value: float32
-    INFO_OUTPUT_LEVEL_NUM,   // value: float32
-    INFO_LATENCY_MSEC,       // value: float32
-    INFO_LATENCY_SAMPLES,    // value: unsigned int32
-    INFO_INPUT_DEVICE,  // value: Text/json
-    INFO_OUTPUT_DEVICE, // value: Text/json
-    REC_START,      // No following value
-    REC_STOP,        // No following value
-    MODE_THRU,      // No following value
-    MODE_PROCESSED, //No following value
-    STREAM_DATA,    //value: float32 array
-    STREAM_LENGTH   // value: unsigned int32
-} sParams; // sParams itself is transmitted in format uint8
-
-typedef union {
-    uint8_t u8[4];
-    uint8_t u16[2];
-    uint32_t u32;
-    float f32;
-} trdtype;
-
-/*
-Protocol: UDP
-Data Format:
-[sParams][VALUE][sParams][VALUE]...
-
-VALUE: variable length
-see comment section of sParams definitions 
-
-Sending or receiving illegal format may lead to catastrophic behavior.
-*/
 void rcom(std::string addr, std::string port) {
-    network rc(addr, port, SOCK_DGRAM);
+    network rcsrv(addr, port);
+    fd_network* rc = nullptr;
     uint8_t rbuf[16384] = {};
     uint8_t sbuf[16384] = {};
     trdtype rdata;
     trdtype tdata;
     ssize_t rdstatus = 0;
     bool tr_pitch_follow = false;
+    int acfd = 0;
 
     tdata.u32 = 0;
     rdata.u32 = 0;
-    rdstatus = rc.nw_bind_and_listen();
-    printf("\nAddr: %s, Port:%s\nbind status: %d\n", addr.c_str(), port.c_str(), rdstatus);
+    rdstatus = rcsrv.nw_bind_and_listen();
+
+    printf("\nAddress: %s, port: %s\n", addr.c_str(), port.c_str());
+    printf("bind status: %zd\n", rdstatus);
     if (rdstatus != 0) {
         return;
     }
     while (!KeyboardInterrupt.load()) {
-        rdstatus = rc.recv_data(rbuf, 16384);
-        if (rdstatus <= 0) {
-            if (rdstatus != EM_CONNECTION_TIMEDOUT) {
-                break;
+        acfd = rcsrv.nw_accept();
+        if (acfd > 0) {
+            rc = new fd_network(acfd);
+            printf("Client %d accepted\n", acfd);
+            
+            while (!KeyboardInterrupt.load()) {
+                rdstatus = rc->recv_data(rbuf, 16384);
+                if (rdstatus <= 0) {
+                    if (rdstatus != EM_CONNECTION_TIMEDOUT) {
+                        printf("Status: %zd\n", rdstatus);
+                        break;
+                    }
+                } else {
+                    printToPlace(8, 1, " ", 2);
+                    printf("\nReceived:\x1b[0K\n");
+                    for (ssize_t rctr=0; rctr < rdstatus; rctr++) {
+                        printf("%02X ", rbuf[rctr]);
+                    }
+                    printf("\x1b[0K\n");
+                }
+                for (ssize_t rctr=0; rctr < rdstatus;) {
+                    switch (rbuf[rctr]) {
+                        case SET_PITCH: // value: float32
+                            memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
+                            rbPitchScale.store((double)((rdata.f32 > 0.0) ? rdata.f32 : rbPitchScale.load()));
+                            rctr += 5;
+                            break;
+                        case SET_FORMANT: // value: float32
+                            memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
+                            rbFormantScale.store((double)((rdata.f32 > 0.0) ? rdata.f32 : rbFormantScale.load()));
+                            rctr += 5;
+                            break;
+                        case SET_TR: // value: float32
+                            memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
+                            rbTimeRatio.store((double)((rdata.f32 > 0.0) ? rdata.f32 : rbTimeRatio.load()));
+                            if (tr_pitch_follow) {
+                                rbPitchScale.store((rbTimeRatio.load() > 0.0) ? (1/rbTimeRatio.load()) : rbPitchScale.load());
+                            }
+                            rctr += 5;
+                            break;
+                        case SET_TR_PITCH_FOLLOW: // no following value
+                            tr_pitch_follow = true;
+                            rctr++;
+                            break;
+                        case SET_TR_PITCH_CONSTANT: // no following value
+                            tr_pitch_follow = false;
+                            rctr++;
+                            break;
+                        case SET_TR_CHANGE_DURATION: // value: float32
+                            rctr += 5;
+                            break;
+                        case QUERY_PITCH:   // No following value
+                            sbuf[0] = (uint8_t)INFO_PITCH;
+                            tdata.f32 = (float)(rbPitchScale.load());
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_FORMANT: // No following value
+                            sbuf[0] = (uint8_t)INFO_FORMANT;
+                            tdata.f32 = (float)(rbFormantScale.load());
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_TR: // No following value
+                            sbuf[0] = (uint8_t)INFO_TR;
+                            tdata.f32 = (float)(rbTimeRatio.load());
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_INPUT_LEVEL_DB: // No following value
+                            sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_DB;
+                            tdata.f32 = 20.0*log10f(iPeak.load());
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_INPUT_LEVEL_NUM: // No following value
+                            sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_NUM;
+                            tdata.f32 = (float)(iPeak.load());
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_OUTPUT_LEVEL_DB: // No following value
+                            sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_DB;
+                            tdata.f32 = 20.0*log10f(oPeak.load());
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_OUTPUT_LEVEL_NUM: // No following value
+                            sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_NUM;
+                            tdata.f32 = (float)(oPeak.load());
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_LATENCY_MSEC: // No following value
+                            sbuf[0] = (uint8_t)INFO_LATENCY_MSEC;
+                            tdata.f32 = ioLatency.load();
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_LATENCY_SAMPLES: // No following value
+                            sbuf[0] = (uint8_t)INFO_LATENCY_SAMPLES;
+                            tdata.u32 = ioLatencySamples.load();
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            if (rc->send_data(sbuf, 5) <= 0){
+                                printf("Send error.\n");
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_INPUT_DEVICE: // No following value
+                            sbuf[0] = (uint8_t)INFO_INPUT_DEVICE;
+                            rctr++;
+                            break;
+                        case QUERY_OUTPUT_DEVICE: // No following value
+                            sbuf[0] = (uint8_t)INFO_OUTPUT_DEVICE;
+                            rctr++;
+                            break;
+                        case REC_START: // No following value
+                            rctr++;
+                            break;
+                        case REC_STOP: // No following value
+                            rctr++;
+                            break;
+                        case MODE_THRU: // No following value
+                            isTHRU = true;
+                            rctr++;
+                            break;
+                        case MODE_PROCESSED: //No following value
+                            isTHRU = false;
+                            rctr++;
+                            break;
+                        case STREAM_LENGTH: // value: unsigned int32
+                            rctr += 5;
+                            break;
+                        default:
+                            rctr++;
+                            break;
+                    }
+                }
             }
-        }
-        for (ssize_t rctr=0; rctr < rdstatus;) {
-            switch (rbuf[rctr]) {
-                case SET_PITCH: // value: float32
-                    memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
-                    rbPitchScale.store((double)(rdata.f32));
-                    rctr += 5;
-                    break;
-                case SET_FORMANT: // value: float32
-                    memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
-                    rbFormantScale.store((double)(rdata.f32));
-                    rctr += 5;
-                    break;
-                case SET_TR: // value: float32
-                    memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
-                    rbTimeRatio.store((double)(rdata.f32));
-                    if (tr_pitch_follow) {
-                        rbPitchScale = (rbTimeRatio > 0.0) ? (1/rbTimeRatio) : 1.0;
-                    }
-                    rctr += 5;
-                    break;
-                case SET_TR_PITCH_FOLLOW: // no following value
-                    tr_pitch_follow = true;
-                    rctr++;
-                    break;
-                case SET_TR_PITCH_CONSTANT: // no following value
-                    tr_pitch_follow = false;
-                    rctr++;
-                    break;
-                case SET_TR_CHANGE_DURATION: // value: float32
-                    rctr += 5;
-                    break;
-                case QUERY_PITCH:   // No following value
-                    sbuf[0] = (uint8_t)INFO_PITCH;
-                    tdata.f32 = (float)(rbPitchScale.load());
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_FORMANT: // No following value
-                    sbuf[0] = (uint8_t)INFO_FORMANT;
-                    tdata.f32 = (float)(rbFormantScale.load());
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_TR: // No following value
-                    sbuf[0] = (uint8_t)INFO_TR;
-                    tdata.f32 = (float)(rbTimeRatio.load());
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_INPUT_LEVEL_DB: // No following value
-                    sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_DB;
-                    tdata.f32 = 20.0*log10f(iPeak.load());
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_INPUT_LEVEL_NUM: // No following value
-                    sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_NUM;
-                    tdata.f32 = (float)(iPeak.load());
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_OUTPUT_LEVEL_DB: // No following value
-                    sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_DB;
-                    tdata.f32 = 20.0*log10f(oPeak.load());
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_OUTPUT_LEVEL_NUM: // No following value
-                    sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_NUM;
-                    tdata.f32 = (float)(oPeak.load());
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_LATENCY_MSEC: // No following value
-                    sbuf[0] = (uint8_t)INFO_LATENCY_MSEC;
-                    tdata.f32 = ioLatency.load();
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_LATENCY_SAMPLES: // No following value
-                    sbuf[0] = (uint8_t)INFO_LATENCY_SAMPLES;
-                    tdata.u32 = ioLatencySamples.load();
-                    memcpy(&(sbuf[1]), tdata.u8, 4);
-                    if (rc.send_data(sbuf, 5) <= 0){
-                        printf("Send error.\n");
-                    }
-                    rctr++;
-                    break;
-                case QUERY_INPUT_DEVICE: // No following value
-                    sbuf[0] = (uint8_t)INFO_INPUT_DEVICE;
-                    rctr++;
-                    break;
-                case QUERY_OUTPUT_DEVICE: // No following value
-                    sbuf[0] = (uint8_t)INFO_OUTPUT_DEVICE;
-                    rctr++;
-                    break;
-                case REC_START: // No following value
-                    rctr++;
-                    break;
-                case REC_STOP: // No following value
-                    rctr++;
-                    break;
-                case MODE_THRU: // No following value
-                    isTHRU = true;
-                    rctr++;
-                    break;
-                case MODE_PROCESSED: //No following value
-                    isTHRU = false;
-                    rctr++;
-                    break;
-                case STREAM_LENGTH: // value: unsigned int32
-                    rctr += 5;
-                    break;
-                default:
-                    rctr++;
-                    break;
-            }
+            delete rc;
+            printf("Client %d leaved\n", acfd);
         }
     }
 }
-#endif
+
+void showHelp() {
+    printf("usage: palb [args]\n");
+    printf("args:\n");
+    printf("--help                      show this message\n");
+    printf("--list-devices              list all audio devices\n");
+    printf("--chunklength [len: int]    set chunk length\n");
+    printf("--rblength [len: int]       set ringbuffer length\n");
+    printf("--input-device [idx: int]   set input device by index\n");
+    printf("                            (shown by --list-devices)\n");
+    printf("--output-device [idx: int]  set output device by index\n");
+    printf("                            (shown by --list-devices)\n");
+    printf("--fsample [fs: float]       set sampling frequency\n");
+    printf("--init-pitch                set initial pitch scale\n");
+    printf("--init-formant              set initial formant scale\n");
+    printf("--mono                      monaural output\n");
+    printf("--ll                        Low latency mode\n");
+    printf("--thru                      Pass through mode (no processing)\n");
+    printf("--tr-mix                    (Rubberband flag) TransientsMixed\n");
+    printf("--tr-smooth                 (Rubberband flag) TransientsSmooth\n");
+    printf("--smoothing                 (Rubberband flag) SmoothingOn\n");
+    printf("--smoothing                 (Rubberband flag) ChannelsTogether\n");
+    printf("\n--show-buffer-health             (Debug) Show buffer health in bar\n");
+    printf("--barlength [len: int]           (Debug) Bar length\n");
+    printf("                                         (intended for using with --show-buffer-length)\n");
+    printf("--show-interval [interval: int]  (Debug) interval of health showing in microseconds\n");
+    printf("                                         (intended for using with --show-buffer-length)\n");
+}
 
 int main(int argc, char* argv[]) {
     static struct option long_options[] = {
@@ -370,7 +317,7 @@ int main(int argc, char* argv[]) {
         {"input-device", required_argument, 0, 2001},
         {"output-device", required_argument, 0, 2002},
         {"fsample", required_argument, 0, 2003},
-        {"format", required_argument, 0, 2004},
+        //{"format", required_argument, 0, 2004},
         {"chunklength", required_argument, 0, 2005},
         {"rblength", required_argument, 0, 2006},
         {"barlength", required_argument, 0, 2007},
@@ -379,22 +326,26 @@ int main(int argc, char* argv[]) {
         {"init-formant", required_argument, 0, 3002},
         {"bind-addr", required_argument, 0, 4001},
         {"bind-port", required_argument, 0, 4002},
+        {"stream", no_argument, 0, 5001},
+        {"stream-bind-addr", required_argument, 0, 5002},
+        {"stream-bind-port", required_argument, 0, 5003},
         {"mono", no_argument, 0, 9001},
         {"tr-mix", no_argument, 0, 9003},
         {"tr-smooth", no_argument, 0, 9004},
         {"smoothing", no_argument, 0, 9005},
         {"ll", no_argument, 0, 9006},
+        {"ch-together", no_argument, 0, 9007},
         {"thru", no_argument, 0, 10001},
         {"sleep-time", required_argument, 0, 10002},
         {0, 0, 0, 0}
     };
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(_WIN32) || defined(_WIN64)
+    signal(SIGINT, kbiHandler);
+#else 
     struct sigaction sa = {};
     sa.sa_handler = kbiHandler;
     sigaction(SIGINT, &sa, nullptr);
-#else
-    signal(SIGINT, kbiHandler);
 #endif
 
     bool listDevices = false;
@@ -435,30 +386,7 @@ int main(int argc, char* argv[]) {
             case '?':
                 return -1;
             case 'h':
-                printf("usage: palb [args]\n");
-                printf("args:\n");
-                printf("--help                      show this message\n");
-                printf("--list-devices              list all audio devices\n");
-                printf("--chunklength [len: int]    set chunk length\n");
-                printf("--rblength [len: int]       set ringbuffer length\n");
-                printf("--input-device [idx: int]   set input device by index\n");
-                printf("                            (shown by --list-devices)\n");
-                printf("--output-device [idx: int]  set output device by index\n");
-                printf("                            (shown by --list-devices)\n");
-                printf("--fsample [fs: float]       set sampling frequency\n");
-                printf("--init-pitch                set initial pitch scale\n");
-                printf("--init-formant              set initial formant scale\n");
-                printf("--mono                      monaural output\n");
-                printf("--ll                        Low latency mode\n");
-                printf("--thru                      Pass through mode (no processing)\n");
-                printf("--tr-mix                    (Rubberband flag) TransientsMixed\n");
-                printf("--tr-smooth                 (Rubberband flag) TransientsSmooth\n");
-                printf("--smoothing                 (Rubberband flag) SmoothingOn\n");
-                printf("\n--show-buffer-health             (Debug) Show buffer health in bar\n");
-                printf("--barlength [len: int]           (Debug) Bar length\n");
-                printf("                                         (intended for using with --show-buffer-length)\n");
-                printf("--show-interval [interval: int]  (Debug) interval of health showing in microseconds\n");
-                printf("                                         (intended for using with --show-buffer-length)\n");
+                showHelp();
                 return 0;
             case 1000: {
                 AudioManipulator initOnly;
@@ -571,6 +499,9 @@ int main(int argc, char* argv[]) {
             case 9006: //ll
                 rbOptions |= RubberBand::RubberBandStretcher::OptionWindowShort;
                 break;
+            case 9007: //ch-together
+                rbOptions |= RubberBand::RubberBandStretcher::OptionChannelsTogether;
+                break;
             case 10001: //thru
                 isTHRU.store(true);
                 break;
@@ -592,20 +523,21 @@ int main(int argc, char* argv[]) {
     printf("Output preparation...\n");
     AudioManipulator aOut(oDeviceIndex, "o",
                           ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
+    if (aOut.getInitStatus() != 0) {
+        printf("Portaudio initialization error: %d\n", aOut.getInitStatus());
+        return -1;
+    }
+
     printf("Input preparation...\n");
     AudioManipulator aIn(iDeviceIndex, "i",
                          ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
-
     if (aIn.getInitStatus() != 0) {
         printf("Portaudio initialization error: %d\n", aIn.getInitStatus());
         return -1;
     }
+
     if (aIn.getChannelCount() == 1) {
         monoInput = true;
-    }
-    if (aOut.getInitStatus() != 0) {
-        printf("Portaudio initialization error: %d\n", aOut.getInitStatus());
-        return -1;
     }
 
     unsigned long nSa = ioChunkLength*aIn.getChannelCount()*2;
@@ -646,11 +578,9 @@ int main(int argc, char* argv[]) {
         rbst1 = new RubberBand::RubberBandStretcher((size_t)ioFs, ioChannel, rbOptions);
     }
 
-    printf("\x1b[2J\n");
-    std::thread com(comthr);
-#if defined(__linux__) || defined(__APPLE__)
+    printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
-#endif
+
     aIn.start();
     aOut.start();
     aOut.pause();
@@ -705,24 +635,21 @@ int main(int argc, char* argv[]) {
                 rbLatancy = rbst1->getStartDelay();
                 ioLatencySamples.store(rbLatancy+ioRBLength);
                 ioLatency.store(((float)ioLatencySamples/ioFs)*1000.0);
-                snprintf(msg, 256, " PARAM| P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6ld (%5.1fmsec) | A: %6d",
-                        rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1->available());
-                printToPlace(6, 1, msg, 256);
                 if (rbst1->available() > ioChunkLength) {
                     if (cRbTimeRatio != rbTimeRatio.load()) {
                         rbst1->reset();
                         cRbTimeRatio = rbTimeRatio.load();
-                        snprintf(msg, 256, "Time ratio changed to %5.3lf", rbTimeRatio.load());
+                        snprintf(msg, 256, "\nTime ratio changed to %5.3lf\n", rbTimeRatio.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     if (cRbFormantScale != rbFormantScale.load()) {
                         cRbFormantScale = rbFormantScale.load();
-                        snprintf(msg, 256, "Formant scale changed to %5.3lf", rbFormantScale.load());
+                        snprintf(msg, 256, "\nFormant scale changed to %5.3lf\n", rbFormantScale.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     if (cRbPitchScale != rbPitchScale.load()) {
                         cRbPitchScale = rbPitchScale.load();
-                        snprintf(msg, 256, "Pitch scale changed to %5.3lf", rbPitchScale.load());
+                        snprintf(msg, 256, "\nPitch scale changed to %5.3lf\n", rbPitchScale.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     rbst1->retrieve(rbResult, ioChunkLength);
@@ -757,6 +684,9 @@ int main(int argc, char* argv[]) {
             }
         }
         if ((showCount > showInterval) && showBufferHealth) {
+            snprintf(msg, 256, " PARAM| P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
+            rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1->available());
+            printToPlace(6, 1, msg, 256);
             printf("\x1b[7;1H INPUT|");
             printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
             printf("|%7.2fdB\x1b[0K", 20*log10f(iPeak.load()));
@@ -780,7 +710,7 @@ int main(int argc, char* argv[]) {
     }
     aIn.stop();
     aOut.stop();
-    printf("\x1b[2J\n");
+    printf("\x1b[2J\x1b[1;1H\x1b[0K\n");
     aIn.terminate();
     aOut.terminate();
     delete[] tdarr;
@@ -793,9 +723,6 @@ int main(int argc, char* argv[]) {
     if (rbst1) { 
         delete rbst1;
     }
-    com.join();
-#if defined(__linux__) || defined(__APPLE__)
     rcomt.join();
-#endif
     return 0;
 }

@@ -450,6 +450,20 @@ fd_network::fd_network(int init_fd){
   socket_fd = init_fd;
   recv_pollfd.fd = init_fd;
   send_pollfd.fd = init_fd;
+
+  nw_connected = true;
+  addr_info_hint.ai_flags = 0;
+  addr_info_hint.ai_protocol = 0;
+
+#ifdef _GNU_SOURCE
+  recv_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP
+                       | POLLERR | POLLNVAL;
+#else
+  recv_pollfd.events = POLLRDNORM | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLRDNORM | POLLHUP | POLLERR | POLLNVAL;
+#endif
+  send_pollfd.events = POLLWRNORM | POLLHUP | POLLERR | POLLNVAL;
 }
 
 #endif

@@ -1,23 +1,30 @@
 #ifndef NETWORK_H_INCLUDED
 #define NETWORK_H_INCLUDED
-#if defined(__linux__) || defined(__APPLE__)
+
 /*
   network (socket接続周辺処理をまとめたクラス)
   ヘッダーファイル 
 */
-#include <string>
 
+
+#include <string>
 #include "stdio.h"
 #include "string.h"
 
-#include "unistd.h"
 #include "errno.h"
+
+#if defined(_WIN32) || defined(_WIN64)
+#include "ws2tcpip.h"
+#include "winsock.h"
+#else
+#include "fcntl.h"
+#include "unistd.h"
 #include "netdb.h"
 #include "sys/poll.h"
 #include "sys/types.h"
 #include "arpa/inet.h"
-#include "fcntl.h"
 #include "netinet/ip.h"
+#endif
 
 constexpr uint32_t EM_TIMEOUT_LENGTH = 100; // default: 100[msec]
 constexpr uint32_t EM_RECVBUF_LENGTH_DEFAULT = 32767;
@@ -29,7 +36,7 @@ constexpr int32_t EM_SEND_AVAILABLE = 0;
 extern volatile bool network_force_return_req;
 
 class network {
-  private:
+  protected:
     struct addrinfo* dest_info = nullptr;
     struct addrinfo addr_info_hint;
     struct sockaddr* con_sock_addr = nullptr;
@@ -205,5 +212,4 @@ class fd_network : public network {
   public:
     fd_network(int init_fd);
 };
-#endif
 #endif

@@ -3,7 +3,11 @@
 #include <string>
 #include <atomic>
 #include "signal.h"
+#include <vector>
+#include <iostream>
+
 #include "network.hpp"
+#include "remocon.h"
 
 std::atomic<bool> KeyboardInterrupt;
 void kbiHandler(int signo) {
@@ -26,23 +30,20 @@ int main(int argc, char* argv[]) {
     int optionIndex = 0;
     std::string conAddr("::1");
     std::string conPort("61234");
-    bool listDevices = false;
-    int oDeviceIndex = 0;
-    int iDeviceIndex = 0;
+
     uint32_t ioChunkLength = 4096;
     uint32_t ioRBLength = 16384;
     double ioFs = 48000.0;
     std::string ioFormat("f32");
-    bool isDuplex = false;
-    bool isListener = true;
+
     do {
         getoptStatus = getopt_long(argc, argv, "", long_options, &optionIndex);
         switch (getoptStatus) {
             case 'h':
                 printf("usage: nwtest [args]\n");
                 printf("args:\n");
-                printf("--addr                      connect address\n");
-                printf("--port                      connect port\n");
+                printf("--addr connect address\n");
+                printf("--port connect port\n");
                 return 0;
             case 2001:
                 conAddr.clear();
@@ -58,37 +59,94 @@ int main(int argc, char* argv[]) {
     } while (getoptStatus != -1);
 
     printf("Set addr: %s, port: %s\n", conAddr.c_str(), conPort.c_str());
-    int conStatus = 0;
     network con1(conAddr, conPort);
     std::string conErrorText;
     conErrorText.clear();
-    //con1.errno_to_string(conStatus, conErrorText);
+
     char destAddr[1024] = {};
     char destPort[16] = {};
     int getAddrStatus = 0;
-    //getAddrStatus = con1.get_connection_addr(destAddr, 1024, destPort, 16);
-    //printf("Address: %s, port: %s\n", destAddr, destPort);
-    //if (!isListener) {
-    //    printf("Connection status: %d (%s)\n", conStatus, conErrorText.c_str());
-    //} else {
-    //    printf("Bind status: %d (%s)\n", conStatus, conErrorText.c_str());
-    //}
+    int conStatus = 0;
+    conStatus = con1.nw_connect();
+    getAddrStatus = con1.get_connection_addr(destAddr, 1024, destPort, 16);
+    printf("Address: %s, port: %s\n", destAddr, destPort);
     if (conStatus != 0) {
+        printf("Connect error: %d (%s)\n", conStatus, strerror(-1*conStatus));
         return -1;
     }
-    //sockaddr acceptedClient = {};
-    //socklen_t acSockLen = 0;
+
     int acFileDesc = 0;
-    printf("Ctrl+c to exit\n");
+    printf("'q' to exit\n");
     ssize_t rLength = 0;
-    while (!KeyboardInterrupt.load()) {
-        //if (isListener) {
-        //    rLength = con1.recv_data(&(rData->u8[0]), 16384);
-        //    aIO->write(rData, rLength/(2*4));
-        //} else {
-        //    aIO->read(tData, ioChunkLength);
-        //    con1.send_data(&(tData->u8[0]), ioChunkLength*2*4);
-        //}
+    std::string command;
+    std::vector<std::string> comlist;
+    char msg[256] = {};
+
+    float rbPitchScale = 0.0;
+    float rbFormantScale = 0.0;
+    float rbTimeRatio = 0.0;
+
+    uint8_t tbuf[1024] = {};
+    uint8_t rbuf[1024] = {};
+    trdtype tdata;
+    tdata.u32 = 0;
+    while (!KeyboardInterrupt.load()){
+        printf("OSVC > ");
+        std::cin >> command;
+        if (command == "") {
+            printf("\nEOF\n");
+            break;
+        }
+        //printf("input: %s", command.c_str());
+        for (size_t ctrc=0; ctrc<command.length(); ctrc++) {
+            command.at(ctrc) = std::tolower(command.at(ctrc));
+        }
+        if (command == "q") {
+            KeyboardInterrupt.store(true);
+        }
+        if (command == "p") {
+           printf("Pitch scale > ");
+            std::cin >> command;
+            try {
+                rbPitchScale = std::stod(command.c_str());
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value");
+                continue;
+            }
+            tdata.f32 = rbPitchScale;
+            tbuf[0] = SET_PITCH;
+            memcpy(&(tbuf[1]), tdata.u8, 4);
+            con1.send_data(tbuf, 5);
+        }
+        if (command == "f") {
+            printf("Formant scale > ");
+            std::cin >> command;
+            try {
+                rbFormantScale = std::stod(command.c_str());
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value");
+                continue;
+            }   
+            tdata.f32 = rbFormantScale;
+            tbuf[0] = SET_FORMANT;
+            memcpy(&(tbuf[1]), tdata.u8, 4);
+            con1.send_data(tbuf, 5);
+        }
+        if (command == "t") {
+            printf("Time ratio > ");
+            std::cin >> command;
+            try {
+                rbTimeRatio = (std::stod(command.c_str()) > 0.0) ? std::stod(command.c_str()) : 1.0;
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value");
+                continue;
+            }
+            tdata.f32 = rbTimeRatio;
+            tbuf[0] = SET_TR;
+            memcpy(&(tbuf[1]), tdata.u8, 4);
+            con1.send_data(tbuf, 5);
+        }
+        command.clear();
     }
     con1.nw_close();
     return 0;
