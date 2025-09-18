@@ -6,7 +6,6 @@
   ヘッダーファイル 
 */
 
-
 #include <string>
 #include "stdio.h"
 #include "string.h"
@@ -16,6 +15,9 @@
 #if defined(_WIN32) || defined(_WIN64)
 #include "ws2tcpip.h"
 #include "winsock.h"
+#include "stdint.h"
+#define poll(fdArray, fds, timeout) WSAPoll(fdArray, fds, timeout)
+#define close(close_fd) closesocket(close_fd)
 #else
 #include "fcntl.h"
 #include "unistd.h"
@@ -38,7 +40,7 @@ extern volatile bool network_force_return_req;
 class network {
   protected:
     struct addrinfo* dest_info = nullptr;
-    struct addrinfo addr_info_hint;
+    struct addrinfo addr_info_hint = {};
     struct sockaddr* con_sock_addr = nullptr;
     int con_sock_addr_len = 0;
     int socket_type;
@@ -90,7 +92,11 @@ template<typename SDTYPE> ssize_t network::send_data_common(SDTYPE* data_arr, co
   int timeout_count = 0;
   int poll_res = 0;
   ssize_t poll_errno = 0;
-  uint8_t* ptr_u8cast = (uint8_t*)data_arr;
+#if defined(_WIN32) || defined(_WIN64)
+  const char* ptr_cast = (const char*)data_arr;
+#else
+  uint8_t* ptr_cast = (uint8_t*)data_arr;
+#endif
 
   send_head_index = 0;
   send_remain = sb_size*sizeof(SDTYPE);
@@ -102,7 +108,7 @@ template<typename SDTYPE> ssize_t network::send_data_common(SDTYPE* data_arr, co
         break;
       }
       if (send_pollfd.revents & (0|POLLWRNORM)) {
-        sent_length = sendto(socket_fd, &(ptr_u8cast[send_head_index]), send_remain, 0, dest_addr, dest_addr_len);
+        sent_length = sendto(socket_fd, &(ptr_cast[send_head_index]), send_remain, 0, dest_addr, dest_addr_len);
         send_errno = errno;
         if (sent_length >= 0) {
           send_head_index += sent_length;
@@ -132,7 +138,7 @@ template<typename SDTYPE> ssize_t network::send_data_common(SDTYPE* data_arr, co
       }
     }
   }
-  return send_remain;
+  return send_head_index;
 }
 /*
   recv_data()

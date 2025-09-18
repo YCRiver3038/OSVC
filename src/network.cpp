@@ -1,4 +1,3 @@
-#if defined(__linux__) || defined(__APPLE__)
 #include "network.hpp"
 
 /* force return request variable */
@@ -8,7 +7,11 @@ volatile bool network_force_return_req = false;
 ssize_t network::recvfrom_ovl(int fd,
                               uint8_t* buffer, size_t count, int flags,
                               struct sockaddr* addr, socklen_t* addr_len) {
-  return recvfrom(fd, buffer, count, flags, addr, addr_len);
+#if defined(_WIN32) || defined(_WIN64)
+    return recvfrom(fd, (char*)buffer, count, flags, addr, addr_len);
+#else
+    return recvfrom(fd, buffer, count, flags, addr, addr_len);
+#endif
 }
 ssize_t network::recvfrom_ovl(int fd,
                               uint16_t* buffer, size_t count, int flags,
@@ -17,8 +20,14 @@ ssize_t network::recvfrom_ovl(int fd,
   ssize_t rf_retnum = 0;
   int rf_errno = 0;
 
+#if defined(_WIN32) || defined(_WIN64)
+  rf_retnum = recvfrom(fd, (char*)buffer, count*sizeof(uint16_t),
+                       flags, addr, addr_len);
+#else
   rf_retnum = recvfrom(fd, buffer, count*sizeof(uint16_t),
                        flags, addr, addr_len);
+#endif
+
   rf_errno = errno;
   if (rf_retnum < 0) {
     return -1*rf_errno;
@@ -39,8 +48,14 @@ ssize_t network::recvfrom_ovl(int fd,
   ssize_t rf_retnum = 0;
   int rf_errno = 0;
 
-  rf_retnum = recvfrom(fd, buffer, count*sizeof(uint32_t),
+#if defined(_WIN32) || defined(_WIN64)
+  rf_retnum = recvfrom(fd, (char*)buffer, count*sizeof(uint32_t),
                        flags, addr, addr_len);
+#else
+  rf_retnum = recvfrom(fd, buffer, count*sizeof(uint16_t),
+                       flags, addr, addr_len);
+#endif
+
   rf_errno = errno;
   if (rf_retnum < 0) {
     return -1*rf_errno;
@@ -112,10 +127,14 @@ int network::common_setup(const std::string& com_ip,
 /* public method */
 network::network(const std::string& con_ip_addr, const std::string& con_port,
                  const int con_family, const int con_sock_type) {
+  int comset_status = 0;
   addr_info_hint.ai_family = con_family;
   addr_info_hint.ai_socktype = con_sock_type;
   socket_type = con_sock_type;
-  common_setup(con_ip_addr, con_port);
+  comset_status = common_setup(con_ip_addr, con_port);
+  if (comset_status != 0) {
+    printf("FATAL: network setup failed ( %d: %s )\n", comset_status, gai_strerror(comset_status));
+  }
 }
 network::network(): network("127.0.0.1", "62341", AF_INET, SOCK_STREAM){}
 network::network(const std::string& con_ip_addr, const std::string& con_port):
@@ -183,7 +202,7 @@ int network::nw_connect(bool is_blocking) {
     return 0;
   }
   if (dest_info == nullptr) {
-    return -1;
+    return -9999;
   }
   blocking_io = is_blocking;
   for (struct addrinfo* di_ref = dest_info;
@@ -198,7 +217,12 @@ int network::nw_connect(bool is_blocking) {
     errno_ret = errno;
     if (socket_fd != -1) {
       if (!is_blocking) {
+#if defined(_WIN32) || defined(_WIN64)
+        u_long ioctlret = 1;
+        ioctlsocket(socket_fd, FIONBIO, &ioctlret);
+#else
         fcntl(socket_fd, F_SETFL, O_NONBLOCK);
+#endif
         do {
           connection_status = connect(socket_fd,
                                       di_ref->ai_addr, di_ref->ai_addrlen);
@@ -295,7 +319,7 @@ int network::nw_bind_and_listen(bool is_blocking){
     return 0;
   }
   if (dest_info == nullptr) {
-    return -1;
+    return -9999;
   }
   blocking_io = is_blocking;
   for (struct addrinfo* di_ref = dest_info; di_ref != nullptr; di_ref = di_ref->ai_next) {
@@ -320,7 +344,12 @@ int network::nw_bind_and_listen(bool is_blocking){
         }
         nw_connected = true;
         if (!is_blocking) {
-          fcntl(socket_fd, F_SETFL, O_NONBLOCK);
+#if defined(_WIN32) || defined(_WIN64)
+        u_long ioctlret = 1;
+        ioctlsocket(socket_fd, FIONBIO, &ioctlret);
+#else
+        fcntl(socket_fd, F_SETFL, O_NONBLOCK);
+#endif
         }
         recv_pollfd.fd = socket_fd;
         send_pollfd.fd = socket_fd;
@@ -440,7 +469,11 @@ ssize_t network::send_data(uint32_t* data_arr, const size_t sb_size, const struc
 
 void network::nw_close(){
   if (socket_type == SOCK_STREAM) {
+#if defined(_WIN32) || defined(_WIN64)
+    shutdown(socket_fd, SD_BOTH);
+#else
     shutdown(socket_fd, SHUT_RDWR);
+#endif
   }
   close(socket_fd);
   nw_connected = false;
@@ -465,5 +498,3 @@ fd_network::fd_network(int init_fd){
 #endif
   send_pollfd.events = POLLWRNORM | POLLHUP | POLLERR | POLLNVAL;
 }
-
-#endif

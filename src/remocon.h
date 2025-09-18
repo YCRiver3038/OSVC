@@ -15,6 +15,7 @@ Sending or receiving illegal format may lead to catastrophic behavior.
 */
 
 enum {
+    SRV_MSG,     // value: text
     SET_PITCH,   // value: float32
     SET_FORMANT, // value: float32
     SET_TR,      // value: float32

@@ -99,6 +99,7 @@ void rcom(std::string addr, std::string port) {
     trdtype rdata;
     trdtype tdata;
     ssize_t rdstatus = 0;
+    ssize_t sendStatus = 0;
     bool tr_pitch_follow = false;
     int acfd = 0;
 
@@ -115,17 +116,20 @@ void rcom(std::string addr, std::string port) {
         acfd = rcsrv.nw_accept();
         if (acfd > 0) {
             rc = new fd_network(acfd);
-            printf("Client %d accepted\n", acfd);
-            
+            printToPlace(5, 1, " ", 2);
+            printf("\rClient %d accepted\x1b[0K\n", acfd);
+            sbuf[0] = SRV_MSG;
+            memcpy(&(sbuf[1]), "OSVC > " ,8);
+            rc->send_data(sbuf, 9);
             while (!KeyboardInterrupt.load()) {
                 rdstatus = rc->recv_data(rbuf, 16384);
                 if (rdstatus <= 0) {
                     if (rdstatus != EM_CONNECTION_TIMEDOUT) {
-                        printf("Status: %zd\n", rdstatus);
+                        //printf("Status: %zd\x1b[0K\n", rdstatus);
                         break;
                     }
                 } else {
-                    printToPlace(8, 1, " ", 2);
+                    printToPlace(12, 1, " ", 2);
                     printf("\nReceived:\x1b[0K\n");
                     for (ssize_t rctr=0; rctr < rdstatus; rctr++) {
                         printf("%02X ", rbuf[rctr]);
@@ -167,8 +171,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_PITCH;
                             tdata.f32 = (float)(rbPitchScale.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -176,8 +181,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_FORMANT;
                             tdata.f32 = (float)(rbFormantScale.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -185,8 +191,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_TR;
                             tdata.f32 = (float)(rbTimeRatio.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -194,8 +201,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_DB;
                             tdata.f32 = 20.0*log10f(iPeak.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -203,8 +211,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_NUM;
                             tdata.f32 = (float)(iPeak.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -212,8 +221,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_DB;
                             tdata.f32 = 20.0*log10f(oPeak.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -221,8 +231,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_NUM;
                             tdata.f32 = (float)(oPeak.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -230,8 +241,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_LATENCY_MSEC;
                             tdata.f32 = ioLatency.load();
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -239,8 +251,9 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_LATENCY_SAMPLES;
                             tdata.u32 = ioLatencySamples.load();
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            if (rc->send_data(sbuf, 5) <= 0){
-                                printf("Send error.\n");
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
                             }
                             rctr++;
                             break;
@@ -274,9 +287,15 @@ void rcom(std::string addr, std::string port) {
                             break;
                     }
                 }
+                if (rdstatus != EM_CONNECTION_TIMEDOUT) {
+                    sbuf[0] = SRV_MSG;
+                    memcpy(&(sbuf[1]), "OSVC > " ,8);
+                    rc->send_data(sbuf, 9);
+                }
             }
             delete rc;
-            printf("Client %d leaved\n", acfd);
+            printToPlace(5, 1, " ", 2);
+            printf("\rClient %d leaved\x1b[0K\n", acfd);
         }
     }
 }
@@ -639,17 +658,17 @@ int main(int argc, char* argv[]) {
                     if (cRbTimeRatio != rbTimeRatio.load()) {
                         rbst1->reset();
                         cRbTimeRatio = rbTimeRatio.load();
-                        snprintf(msg, 256, "\nTime ratio changed to %5.3lf\n", rbTimeRatio.load());
+                        snprintf(msg, 256, "Time ratio changed to %5.3lf\n", rbTimeRatio.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     if (cRbFormantScale != rbFormantScale.load()) {
                         cRbFormantScale = rbFormantScale.load();
-                        snprintf(msg, 256, "\nFormant scale changed to %5.3lf\n", rbFormantScale.load());
+                        snprintf(msg, 256, "Formant scale changed to %5.3lf\n", rbFormantScale.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     if (cRbPitchScale != rbPitchScale.load()) {
                         cRbPitchScale = rbPitchScale.load();
-                        snprintf(msg, 256, "\nPitch scale changed to %5.3lf\n", rbPitchScale.load());
+                        snprintf(msg, 256, "Pitch scale changed to %5.3lf\n", rbPitchScale.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     rbst1->retrieve(rbResult, ioChunkLength);
@@ -683,21 +702,23 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-        if ((showCount > showInterval) && showBufferHealth) {
-            snprintf(msg, 256, " PARAM| P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
-            rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1->available());
-            printToPlace(6, 1, msg, 256);
-            printf("\x1b[7;1H INPUT|");
-            printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
-            printf("|%7.2fdB\x1b[0K", 20*log10f(iPeak.load()));
-            printf("\nOUTPUT|");
-            printRatBar(oPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
-            printf("|%7.2fdB\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
-            printRatBar(aInRbStoredLength, aInRbLength, barMaxLength, true, '*', ' ', true, true);
-            printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aInEmptyCount, aInFullCount, aIn.getRxCbFrameCount());
-            printRatBar(aOutRbStoredLength, aOutRbLength, barMaxLength, true, '*', ' ', true);
-            printf("| E(%d), O(%d) | %05lu\x1b[0K", aOutEmptyCount, aOutFullCount, aOut.getTxCbFrameCount());
-            fflush(stdout);
+        if (showCount > showInterval) {
+            if (showBufferHealth) {
+                snprintf(msg, 256, " PARAM| P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
+                rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1->available());
+                printToPlace(6, 1, msg, 256);
+                printf("\x1b[7;1H INPUT|");
+                printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
+                printf("|%7.2fdB\x1b[0K", 20*log10f(iPeak.load()));
+                printf("\nOUTPUT|");
+                printRatBar(oPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
+                printf("|%7.2fdB\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
+                printRatBar(aInRbStoredLength, aInRbLength, barMaxLength, true, '*', ' ', true, true);
+                printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aInEmptyCount, aInFullCount, aIn.getRxCbFrameCount());
+                printRatBar(aOutRbStoredLength, aOutRbLength, barMaxLength, true, '*', ' ', true);
+                printf("| E(%d), O(%d) | %05lu\x1b[0K", aOutEmptyCount, aOutFullCount, aOut.getTxCbFrameCount());
+                fflush(stdout);
+            }
             showCount = 0;
             iPeakM = 0.0;
             oPeakM = 0.0;
