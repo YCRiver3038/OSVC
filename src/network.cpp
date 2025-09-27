@@ -52,7 +52,7 @@ ssize_t network::recvfrom_ovl(int fd,
   rf_retnum = recvfrom(fd, (char*)buffer, count*sizeof(uint32_t),
                        flags, addr, addr_len);
 #else
-  rf_retnum = recvfrom(fd, buffer, count*sizeof(uint16_t),
+  rf_retnum = recvfrom(fd, buffer, count*sizeof(uint32_t),
                        flags, addr, addr_len);
 #endif
 

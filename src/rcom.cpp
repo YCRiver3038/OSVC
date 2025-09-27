@@ -54,57 +54,48 @@ void rcvthr(network& rc) {
                     }
                     break;
                 case INFO_PITCH:     // value: float32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Pitch: %f\n", rdata.f32);
                     break;
                 case INFO_FORMANT:   // value: float32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Formant: %f\n", rdata.f32);
                     break;
                 case INFO_TR:        // value: float32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Time ratio: %f\n", rdata.f32);
                     break;
                 case INFO_INPUT_LEVEL_DB:     // value: float32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Input Level: %f[dBFS]\n", rdata.f32);
                     break;
                 case INFO_INPUT_LEVEL_NUM:    // value: float32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Input Level: %f\n", rdata.f32);
                     break;
                 case INFO_OUTPUT_LEVEL_DB:    // value: float32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Output Level: %f[dBFS]\n", rdata.f32);
                     break;
                 case INFO_OUTPUT_LEVEL_NUM:   // value: float32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Output Level: %f\n", rdata.f32);
                     break;
                 case INFO_LATENCY_MSEC:       // value: float32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Latency: %f[msec]\n", rdata.f32);
                     break;
                 case INFO_LATENCY_SAMPLES:    // value: unsigned int32
-                    rdctr++;
-                    memcpy(rdata.u8, &(rbuf[rdctr]), 4);
-                    rdctr += 4;
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
                     printf("Info: Latency: %u[sample]\n", rdata.u32);
                     break;
                 case INFO_INPUT_DEVICE:  // value: Text/json
@@ -140,8 +131,8 @@ int main(int argc, char* argv[]) {
     };
     int getoptStatus = 0;
     int optionIndex = 0;
-    std::string conAddr("::1");
-    std::string conPort("61234");
+    std::string conAddr("127.0.0.1");
+    std::string conPort("63297");
 
     uint32_t ioChunkLength = 4096;
     uint32_t ioRBLength = 16384;
@@ -211,8 +202,7 @@ int main(int argc, char* argv[]) {
             printf("\nEOF\n");
             break;
         }
-        printf("input: %s\n", command.c_str());
-        //printf("input: %s", command.c_str());
+        //printf("input: %s\n", command.c_str());
         for (size_t ctrc=0; ctrc<command.length(); ctrc++) {
             command.at(ctrc) = std::tolower(command.at(ctrc));
         }
@@ -263,6 +253,16 @@ int main(int argc, char* argv[]) {
             tbuf[0] = SET_TR;
             memcpy(&(tbuf[1]), tdata.u8, 4);
             con1.send_data(tbuf, 5);
+            continue;
+        }
+        if (command == "tpf") { // pitch follows time scale
+            tbuf[0] = SET_TR_PITCH_FOLLOW;
+            con1.send_data(tbuf, 1);
+            continue;
+        }
+        if (command == "tpc") { // pitch won't follow time scale
+            tbuf[0] = SET_TR_PITCH_CONSTANT;
+            con1.send_data(tbuf, 1);
             continue;
         }
         if (command == "qp") {

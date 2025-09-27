@@ -1,5 +1,5 @@
 #include "main.h"
-//#include "nlohmann/json.hpp"
+#include "nlohmann/json.hpp"
 #include "network.hpp"
 
 #include "remocon.h"
@@ -82,6 +82,39 @@ void printToPlace(int row, int col, const char* txt, size_t length) {
     printf("\x1b[%d;%dH%s\x1b[0K", row, col, msg.c_str());
 }
 
+void tokenize(std::string& coms, std::vector<std::string>& tokenized) {
+    std::string token;
+    uint32_t tokenLength = 0;
+    uint32_t ctr=0;
+    for (ctr=0; ctr<coms.length(); ctr++) {
+        switch (coms.at(ctr)) {
+            case 0:
+            case ' ':
+                if (tokenLength > 0) {
+                    token.clear();
+                    token.assign(coms.substr(ctr-tokenLength, tokenLength));
+                    tokenized.push_back(token);
+                    //printf("token: %s\n", token.c_str());
+                    tokenLength = 0;
+                    break;
+                }
+                tokenLength = 0;
+                break;
+            default:
+                tokenLength++;
+                break;
+        }
+    }
+    if (tokenLength > 0) {
+        token.clear();
+        token.assign(coms.substr(ctr-tokenLength, tokenLength));
+        tokenized.push_back(token);
+        //printf("token: %s\n", token.c_str());
+    }
+    tokenLength = 0;
+    return;
+}
+
 std::atomic<double> rbPitchScale = 1.0;
 std::atomic<double> rbFormantScale = 1.0;
 std::atomic<double> rbTimeRatio = 1.0;
@@ -90,6 +123,12 @@ std::atomic<uint32_t> ioLatencySamples = 0;
 std::atomic<float> iPeak = 0;
 std::atomic<float> oPeak = 0;
 std::atomic<bool> isTHRU = false;
+
+void comthr() {
+    while (!KeyboardInterrupt.load()) {
+        
+    }
+}
 
 void rcom(std::string addr, std::string port) {
     network rcsrv(addr, port);
@@ -130,7 +169,7 @@ void rcom(std::string addr, std::string port) {
                     }
                 } else {
                     printToPlace(12, 1, " ", 2);
-                    printf("\nReceived:\x1b[0K\n");
+                    printf("\rReceived:\x1b[0K\n");
                     for (ssize_t rctr=0; rctr < rdstatus; rctr++) {
                         printf("%02X ", rbuf[rctr]);
                     }
@@ -301,7 +340,7 @@ void rcom(std::string addr, std::string port) {
 }
 
 void showHelp() {
-    printf("usage: palb [args]\n");
+    printf("usage: osvc [args]\n");
     printf("args:\n");
     printf("--help                      show this message\n");
     printf("--list-devices              list all audio devices\n");
@@ -320,7 +359,7 @@ void showHelp() {
     printf("--tr-mix                    (Rubberband flag) TransientsMixed\n");
     printf("--tr-smooth                 (Rubberband flag) TransientsSmooth\n");
     printf("--smoothing                 (Rubberband flag) SmoothingOn\n");
-    printf("--smoothing                 (Rubberband flag) ChannelsTogether\n");
+    printf("--ch-together               (Rubberband flag) ChannelsTogether\n");
     printf("\n--show-buffer-health             (Debug) Show buffer health in bar\n");
     printf("--barlength [len: int]           (Debug) Bar length\n");
     printf("                                         (intended for using with --show-buffer-length)\n");
@@ -658,17 +697,17 @@ int main(int argc, char* argv[]) {
                     if (cRbTimeRatio != rbTimeRatio.load()) {
                         rbst1->reset();
                         cRbTimeRatio = rbTimeRatio.load();
-                        snprintf(msg, 256, "Time ratio changed to %5.3lf\n", rbTimeRatio.load());
+                        snprintf(msg, 256, "Time ratio changed to %5.3lf\x1b[0K\n", rbTimeRatio.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     if (cRbFormantScale != rbFormantScale.load()) {
                         cRbFormantScale = rbFormantScale.load();
-                        snprintf(msg, 256, "Formant scale changed to %5.3lf\n", rbFormantScale.load());
+                        snprintf(msg, 256, "Formant scale changed to %5.3lf\x1b[0K\n", rbFormantScale.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     if (cRbPitchScale != rbPitchScale.load()) {
                         cRbPitchScale = rbPitchScale.load();
-                        snprintf(msg, 256, "Pitch scale changed to %5.3lf\n", rbPitchScale.load());
+                        snprintf(msg, 256, "Pitch scale changed to %5.3lf\x1b[0K\n", rbPitchScale.load());
                         printToPlace(5, 1, msg, 256);
                     }
                     rbst1->retrieve(rbResult, ioChunkLength);
@@ -692,6 +731,8 @@ int main(int argc, char* argv[]) {
                     oPeak.store(oPeakM);
                 }
             } else {
+                ioLatencySamples.store(ioRBLength);
+                ioLatency.store(((float)ioLatencySamples/ioFs)*1000.0);
                 AudioManipulator::interleave((AudioData**)deinterleaved, tdarr, ioChunkLength);
                 aOut.write(tdarr, ioChunkLength);
                 if (showBufferHealth) {
@@ -705,7 +746,7 @@ int main(int argc, char* argv[]) {
         if (showCount > showInterval) {
             if (showBufferHealth) {
                 snprintf(msg, 256, " PARAM| P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
-                rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1->available());
+                rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1?(rbst1->available()):0);
                 printToPlace(6, 1, msg, 256);
                 printf("\x1b[7;1H INPUT|");
                 printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
@@ -717,6 +758,7 @@ int main(int argc, char* argv[]) {
                 printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aInEmptyCount, aInFullCount, aIn.getRxCbFrameCount());
                 printRatBar(aOutRbStoredLength, aOutRbLength, barMaxLength, true, '*', ' ', true);
                 printf("| E(%d), O(%d) | %05lu\x1b[0K", aOutEmptyCount, aOutFullCount, aOut.getTxCbFrameCount());
+                printToPlace(15, 1, "\r", 2);
                 fflush(stdout);
             }
             showCount = 0;
