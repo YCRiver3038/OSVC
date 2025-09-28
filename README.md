@@ -34,7 +34,7 @@ RubberBand (ライブラリ) を用いてリアルタイムに低遅延なボイ
 ## ビルド・依存ライブラリについて
 このソフトはPortAudioとRubberBandに依存しています。  
 ビルド前に各ライブラリの開発用ファイルをインストールしてください。  
-( 例: `librubberband-dev`, `portaudio19-dev` )
+( 例: `librubberband-dev`, `portaudio19-dev` )  
 また、ビルドにはCMakeを利用しています。  
 
 ## 現状
