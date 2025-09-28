@@ -3,6 +3,7 @@
 RubberBand (ライブラリ) を用いてリアルタイムに低遅延なボイチェンをしたいソフト  
 
 ## 機能
+```
 --help                      ヘルプを表示します。  
 --list-devices              音声の入出力デバイスを表示します。  
 --chunklength [len: int]    処理単位をサンプル数で指定します。  
@@ -28,6 +29,7 @@ RubberBand (ライブラリ) を用いてリアルタイムに低遅延なボイ
 --show-buffer-health             バッファの状態と入出力レベルをバーで表示します。  
 --barlength [len: int]           バー表示の長さを指定します。  
 --show-interval [interval: int]  表示の更新間隔を指定します。(厳密なものではありません。)  
+```
 
 ## 現状
 Linux上で遅延は60msぐらいになっています。  
