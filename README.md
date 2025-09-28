@@ -31,6 +31,12 @@ RubberBand (ライブラリ) を用いてリアルタイムに低遅延なボイ
 --show-interval [interval: int]  表示の更新間隔を指定します。(厳密なものではありません。)  
 ```
 
+## ビルド・依存ライブラリについて
+このソフトはPortAudioとRubberBandに依存しています。  
+ビルド前に各ライブラリの開発用ファイルをインストールしてください。  
+( 例: `librubberband-dev`, `portaudio19-dev` )
+また、ビルドにはCMakeを利用しています。  
+
 ## 現状
 Linux上で遅延は60msぐらいになっています。  
 Windowsでの遅延もWASAPIを使えばそれくらいに収まります。  
