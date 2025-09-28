@@ -4,7 +4,7 @@
 #include "stdint.h"
 
 /*
-Protocol: UDP
+Protocol: TCP
 Data Format:
 [cParams][VALUE][cParams][VALUE]...
 
