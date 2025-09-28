@@ -60,6 +60,8 @@ class AudioManipulator {
         unsigned int lengthFactor = 1;
         AudioData* zerodata = nullptr;
         unsigned long zdlength = 0;
+        uint32_t readEmptyCount = 0;
+        uint32_t writeFullCount = 0;
 
     public:
         unsigned long iFrameCount = 0;
@@ -276,12 +278,13 @@ class AudioManipulator {
                 return -1;
             }
             if (remain > length) {
-                dataBuf->put_data_memcpy(src, length*nCH/lengthFactor);
+                dataBuf->put_data_memcpy(src, length*nCH);
                 //dataBuf->put_data_arr_queue(src, length*nCH*lengthFactor);
                 return 0;
             }
+            writeFullCount++;
             if (remain > 0) {
-                dataBuf->put_data_memcpy(src, remain*nCH/lengthFactor);
+                dataBuf->put_data_memcpy(src, remain*nCH);
                 return 0;
             }
             return 0;
@@ -321,28 +324,36 @@ class AudioManipulator {
                 return 0;
             }
             if (remain >= length) {
-                memcpy(dest, dataBuf->get_data_memcpy(length*nCH/lengthFactor),
-                             length*nCH*sizeof(AudioData)/lengthFactor);
+                memcpy(dest, dataBuf->get_data_memcpy(length*nCH),
+                             length*nCH*sizeof(AudioData));
                 //memcpy(dest, dataBuf->get_data_nelm_queue(length*nCH), length*nCH*sizeof(AudioData));
                 return 0;
             }
             if (remain != 0) {
                 memcpy(dest,
-                       dataBuf->get_data_memcpy(remain*nCH/lengthFactor),
-                       remain*nCH*sizeof(AudioData)/lengthFactor);
+                       dataBuf->get_data_memcpy(remain*nCH),
+                       remain*nCH*sizeof(AudioData));
                 return 0;
             }
+            readEmptyCount++;
             if ((length*nCH) < zdlength) {
                 memcpy(dest, zerodata,
-                       length*nCH*sizeof(AudioData)/lengthFactor);
+                       length*nCH*sizeof(AudioData));
                 return 0;
             }
             memcpy(dest, zerodata,
-                   zdlength*sizeof(AudioData)/lengthFactor);
-
+                   zdlength*sizeof(AudioData));
             return 0;
         }
-
+        
+        uint32_t getReadEmptyCount() {
+            return readEmptyCount;
+        }
+        
+        uint32_t getWriteFullCount() {
+            return writeFullCount;
+        }
+        
         int getInitStatus() {
             return static_cast<int>(initStatus);
         }

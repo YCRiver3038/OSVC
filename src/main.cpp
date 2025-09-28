@@ -647,6 +647,7 @@ int main(int argc, char* argv[]) {
     if (!isTHRU.load()) {
         rbst1->setMaxProcessSize(ioChunkLength);
     }
+    bool aInInit = false;
     while (!KeyboardInterrupt.load()) {
         nanosleep(&sleepTime, nullptr);
         showCount += sleepTime.tv_nsec;
@@ -661,6 +662,12 @@ int main(int argc, char* argv[]) {
         }
         if (aOutRbStoredLength == 0) {
             aOutEmptyCount++;
+        }
+        if (!aInInit) {
+            if (aInRbStoredLength >= aInStartThreshold) {
+                aInInit = true;
+            }
+            continue;
         }
         if (aInRbStoredLength >= ioChunkLength) {
             if (aInRbStoredLength >= aInRbLength) {
@@ -755,9 +762,9 @@ int main(int argc, char* argv[]) {
                 printRatBar(oPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
                 printf("|%7.2fdB\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
                 printRatBar(aInRbStoredLength, aInRbLength, barMaxLength, true, '*', ' ', true, true);
-                printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aInEmptyCount, aInFullCount, aIn.getRxCbFrameCount());
+                printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aIn.getReadEmptyCount(), aIn.getWriteFullCount(), aIn.getRxCbFrameCount());
                 printRatBar(aOutRbStoredLength, aOutRbLength, barMaxLength, true, '*', ' ', true);
-                printf("| E(%d), O(%d) | %05lu\x1b[0K", aOutEmptyCount, aOutFullCount, aOut.getTxCbFrameCount());
+                printf("| E(%d), O(%d) | %05lu\x1b[0K", aOut.getReadEmptyCount(), aOut.getWriteFullCount(), aOut.getTxCbFrameCount());
                 printToPlace(15, 1, "\r", 2);
                 fflush(stdout);
             }
