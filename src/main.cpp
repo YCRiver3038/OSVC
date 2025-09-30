@@ -608,7 +608,6 @@ int main(int argc, char* argv[]) {
     }
 
     char msg[256] = {};
-    int showCount = 0;
     float iPeakM = 0.0;
     float oPeakM = 0.0;
     bool isInit = false;
@@ -650,7 +649,6 @@ int main(int argc, char* argv[]) {
     }
     while (!KeyboardInterrupt.load()) {
         nanosleep(&sleepTime, nullptr);
-        showCount += sleepTime.tv_nsec;
         
         aInRbStoredLength = aIn.getRbStoredChunkLength();
         aOutRbStoredLength = aOut.getRbStoredChunkLength();
@@ -754,7 +752,6 @@ int main(int argc, char* argv[]) {
                 printToPlace(15, 1, "\r", 2);
                 fflush(stdout);
             }
-            showCount = 0;
             iPeakM = 0.0;
             oPeakM = 0.0;
             iPeak.store(0.0);
