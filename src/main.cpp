@@ -115,15 +115,6 @@ void tokenize(std::string& coms, std::vector<std::string>& tokenized) {
     return;
 }
 
-std::atomic<double> rbPitchScale = 1.0;
-std::atomic<double> rbFormantScale = 1.0;
-std::atomic<double> rbTimeRatio = 1.0;
-std::atomic<float> ioLatency = 0.0;
-std::atomic<uint32_t> ioLatencySamples = 0;
-std::atomic<float> iPeak = 0;
-std::atomic<float> oPeak = 0;
-std::atomic<bool> isTHRU = false;
-
 void comthr() {
     while (!KeyboardInterrupt.load()) {
         
@@ -576,8 +567,17 @@ int main(int argc, char* argv[]) {
         }
     } while (getoptStatus != -1);
 
+    printf("Input preparation...\n");
     bool monoInput = false;
-
+    AudioManipulator aIn(iDeviceIndex, "i",
+                         ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
+    if (aIn.getInitStatus() != 0) {
+        printf("Portaudio initialization error: %d\n", aIn.getInitStatus());
+        return -1;
+    }
+    if (aIn.getChannelCount() == 1) {
+        monoInput = true;
+    }
     printf("Output preparation...\n");
     AudioManipulator aOut(oDeviceIndex, "o",
                           ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
@@ -586,17 +586,18 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    printf("Input preparation...\n");
-    AudioManipulator aIn(iDeviceIndex, "i",
-                         ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
-    if (aIn.getInitStatus() != 0) {
-        printf("Portaudio initialization error: %d\n", aIn.getInitStatus());
-        return -1;
-    }
-
-    if (aIn.getChannelCount() == 1) {
-        monoInput = true;
-    }
+    char msg[256] = {};
+    int showCount = 0;
+    float iPeakM = 0.0;
+    float oPeakM = 0.0;
+    bool isInit = false;
+    bool aInInit = false;
+    uint32_t aInRbStoredLength = 0;
+    uint32_t aOutRbStoredLength = 0;
+    uint32_t aInRbLength = aIn.getRbChunkLength();
+    uint32_t aInStartThreshold = aInRbLength / 2;
+    uint32_t aOutRbLength = aOut.getRbChunkLength();
+    uint32_t aOutStartThreshold = aOutRbLength / 2;
 
     unsigned long nSa = ioChunkLength*aIn.getChannelCount()*2;
     AudioData* tdarr = new AudioData[nSa];
@@ -604,25 +605,6 @@ int main(int argc, char* argv[]) {
         tdarr[ctr1].f32 = 0.0;
     }
 
-    //aIn.start();
-    uint32_t aInEmptyCount  = 0;
-    uint32_t aOutEmptyCount  = 0;
-    uint32_t aInFullCount = 0;
-    uint32_t aOutFullCount = 0;
-    if (showBufferHealth) {
-        printf("\nBuffer health\n");
-    }
-    uint32_t aInRbStoredLength = 0;
-    uint32_t aOutRbStoredLength = 0;
-    uint32_t aInRbLength = aIn.getRbChunkLength();
-    uint32_t aOutRbLength = aOut.getRbChunkLength();
-    uint32_t aOutStartThreshold = aOutRbLength / 2;
-    uint32_t aInStartThreshold = aInRbLength / 2;
-    bool isInit = false;
-    int showCount = 0;
-    bool aInRestarted = true;
-    float iPeakM = 0.0;
-    float oPeakM = 0.0;
     uint32_t ioChannel = aOut.getChannelCount();
     float** deinterleaved = new float*[ioChannel];
     float** rbResult = new float*[ioChannel];
@@ -638,16 +620,12 @@ int main(int argc, char* argv[]) {
 
     printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
-
     aIn.start();
     aOut.start();
     aOut.pause();
-    size_t rbLatancy = 0;
-    char msg[256] = {};
     if (!isTHRU.load()) {
         rbst1->setMaxProcessSize(ioChunkLength);
     }
-    bool aInInit = false;
     while (!KeyboardInterrupt.load()) {
         nanosleep(&sleepTime, nullptr);
         showCount += sleepTime.tv_nsec;
@@ -660,9 +638,6 @@ int main(int argc, char* argv[]) {
                 isInit = true;
             }
         }
-        if (aOutRbStoredLength == 0) {
-            aOutEmptyCount++;
-        }
         if (!aInInit) {
             if (aInRbStoredLength >= aInStartThreshold) {
                 aInInit = true;
@@ -670,14 +645,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
         if (aInRbStoredLength >= ioChunkLength) {
-            if (aInRbStoredLength >= aInRbLength) {
-                aInFullCount++;
-            }
             aIn.read(tdarr, ioChunkLength);
-            if (aInRbStoredLength == 0) {
-                aInEmptyCount++;
-            }
-
             if (showBufferHealth) {
                 for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
                     updateMax(tdarr[ctr].f32, &iPeakM);
@@ -697,8 +665,7 @@ int main(int argc, char* argv[]) {
                 rbst1->setPitchScale(rbPitchScale.load());
                 rbst1->setTimeRatio(rbTimeRatio.load());
                 rbst1->process(deinterleaved, ioChunkLength, false);
-                rbLatancy = rbst1->getStartDelay();
-                ioLatencySamples.store(rbLatancy+ioRBLength);
+                ioLatencySamples.store(rbst1->getStartDelay() + ioRBLength);
                 ioLatency.store(((float)ioLatencySamples/ioFs)*1000.0);
                 if (rbst1->available() > ioChunkLength) {
                     if (cRbTimeRatio != rbTimeRatio.load()) {
@@ -728,9 +695,6 @@ int main(int argc, char* argv[]) {
                     AudioManipulator::interleave((AudioData**)rbResult, tdarr, ioChunkLength);
 
                     aOut.write(tdarr, ioChunkLength);
-                    if (aOutRbStoredLength >= aOutRbLength) {
-                        aOutFullCount++;
-                    } 
 
                     for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
                         updateMax(tdarr[ctr].f32, &oPeakM);

@@ -20,3 +20,13 @@
 #include "rubberband/RubberBandStretcher.h"
 
 #include "AudioManipulator.hpp"
+
+// Global Variables
+std::atomic<double> rbPitchScale = 1.0;
+std::atomic<double> rbFormantScale = 1.0;
+std::atomic<double> rbTimeRatio = 1.0;
+std::atomic<float> ioLatency = 0.0;
+std::atomic<uint32_t> ioLatencySamples = 0;
+std::atomic<float> iPeak = 0;
+std::atomic<float> oPeak = 0;
+std::atomic<bool> isTHRU = false;
