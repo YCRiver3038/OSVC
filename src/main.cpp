@@ -358,6 +358,27 @@ void showHelp() {
     printf("                                         (intended for using with --show-buffer-length)\n");
 }
 
+std::atomic<bool> tc1msecReq;
+std::atomic<bool> tcRefreshReq;
+void timeCounter(struct timespec ts, int refreshTiming) {
+    long tElapsed1 = 0;
+    long tElapsedR = 0;
+    while (!KeyboardInterrupt.load()) {
+        //printf("\x1b[2;1H\x1b[0KE1: %ld, ER: %ld", tElapsed1, tElapsedR);
+        if (tElapsed1 > 1000000) { //1msec
+            tc1msecReq.store(true);
+            tElapsed1 = 0;
+        }
+        if (tElapsedR > refreshTiming) {
+            tcRefreshReq.store(true);
+            tElapsedR = 0;
+        }
+        nanosleep(&ts, nullptr);
+        tElapsed1 += ts.tv_nsec;
+        tElapsedR += ts.tv_nsec;
+    }
+}
+
 int main(int argc, char* argv[]) {
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
@@ -503,7 +524,7 @@ int main(int argc, char* argv[]) {
                 break;
             case 2008:
                 try {
-                    showInterval = std::stoi(std::string(optarg)) * 1000;
+                    showInterval = std::stol(std::string(optarg)) * 1000;
                 } catch (const std::invalid_argument& e) {
                     printf("Invalid interval: %s\n", optarg);
                     return -1;
@@ -620,6 +641,7 @@ int main(int argc, char* argv[]) {
 
     printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
+    std::thread tcThr(timeCounter, sleepTime, showInterval);
     aIn.start();
     aOut.start();
     aOut.pause();
@@ -714,7 +736,7 @@ int main(int argc, char* argv[]) {
                 }
             }
         }
-        if (showCount > showInterval) {
+        if (tcRefreshReq.load()) {
             if (showBufferHealth) {
                 snprintf(msg, 256, " PARAM| P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
                 rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1?(rbst1->available()):0);
@@ -737,6 +759,7 @@ int main(int argc, char* argv[]) {
             oPeakM = 0.0;
             iPeak.store(0.0);
             oPeak.store(0.0);
+            tcRefreshReq.store(false);
         }
     }
     if (KeyboardInterrupt.load()){
@@ -758,5 +781,6 @@ int main(int argc, char* argv[]) {
         delete rbst1;
     }
     rcomt.join();
+    tcThr.join();
     return 0;
 }

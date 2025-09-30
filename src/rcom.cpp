@@ -300,6 +300,16 @@ int main(int argc, char* argv[]) {
             con1.send_data(tbuf, 1);
             continue;
         }
+        if (command == "thru") {
+            tbuf[0] = MODE_THRU;
+            con1.send_data(tbuf, 1);
+            continue;
+        }
+        if (command == "proc") {
+            tbuf[0] = MODE_PROCESSED;
+            con1.send_data(tbuf, 1);
+            continue;
+        }
         printf("Invalid command: %s\n", command.c_str());
         printf("     > ");
         command.clear();
