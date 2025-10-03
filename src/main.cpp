@@ -669,7 +669,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-
     printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
     std::thread tcThr(timeCounter, sleepTime, showInterval);
