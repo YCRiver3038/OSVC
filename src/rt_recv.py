@@ -7,7 +7,7 @@ import argparse
 import queue
 import time
 
-import numpy as np
+#import numpy as np
 import pyaudio
 
 import sound_device
@@ -42,7 +42,6 @@ if __name__ == '__main__':
     rcv_bind_port = 60288
     aud_fsample = 48000
     aud_dev = 0
-    aud_res = pyaudio.paInt16
     res_str = "16"
 
     ca_parser = argparse.ArgumentParser(description='')
