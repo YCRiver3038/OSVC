@@ -325,7 +325,7 @@ void rcom(std::string addr, std::string port) {
             }
             delete rc;
             printToPlace(5, 1, " ", 2);
-            printf("\rClient %d leaved\x1b[0K\n", acfd);
+            printf("\rClient %d left\x1b[0K\n", acfd);
         }
     }
 }
