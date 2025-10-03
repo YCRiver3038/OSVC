@@ -345,16 +345,18 @@ void showHelp() {
     printf("--init-pitch                set initial pitch scale\n");
     printf("--init-formant              set initial formant scale\n");
     printf("--mono                      monaural output\n");
-    printf("--ll                        Low latency mode\n");
-    printf("--thru                      Pass through mode (no processing)\n");
+    printf("--ll                        low latency mode\n");
+    printf("--thru                      pass through mode (no processing)\n");
     printf("--tr-mix                    (Rubberband flag) TransientsMixed\n");
     printf("--tr-smooth                 (Rubberband flag) TransientsSmooth\n");
     printf("--smoothing                 (Rubberband flag) SmoothingOn\n");
     printf("--ch-together               (Rubberband flag) ChannelsTogether\n");
-    printf("--stream-dest-addr          Audio streaming destination address\n");
-    printf("--stream-dest-port          Audio streaming destination address\n");
-    printf("\n--show-buffer-health             (Debug) Show buffer health in bar\n");
-    printf("--barlength [len: int]           (Debug) Bar length\n");
+    printf("--stream                    enable audio streaming\n");
+    printf("--stream-dest-addr          audio streaming destination address\n");
+    printf("--stream-dest-port          audio streaming destination address\n");
+    printf("--no-local-out              disable local output\n");
+    printf("\n--show-buffer-health             (Debug) show buffer health in bar\n");
+    printf("--barlength [len: int]           (Debug) bar length\n");
     printf("                                         (intended for using with --show-buffer-length)\n");
     printf("--show-interval [interval: int]  (Debug) interval of health showing in microseconds\n");
     printf("                                         (intended for using with --show-buffer-length)\n");
@@ -416,6 +418,7 @@ int main(int argc, char* argv[]) {
         {"ch-together", no_argument, 0, 9007},
         {"thru", no_argument, 0, 10001},
         {"sleep-time", required_argument, 0, 10002},
+        {"no-local-out", no_argument, 0, 10003},
         {0, 0, 0, 0}
     };
 
@@ -431,6 +434,7 @@ int main(int argc, char* argv[]) {
     bool showBufferHealth = false;
     bool isMonoMode = false;
     bool streamEnabled = false;
+    bool loDisabled = false;
     int getoptStatus = 0;
     int optionIndex = 0;
     int iDeviceIndex = 0;
@@ -607,6 +611,9 @@ int main(int argc, char* argv[]) {
                     return -1;
                 }
                 break;
+            case 10003: //no-local-out
+                loDisabled = true;
+                break;
             default:
                 break;
         }
@@ -623,12 +630,16 @@ int main(int argc, char* argv[]) {
     if (aIn.getChannelCount() == 1) {
         monoInput = true;
     }
-    printf("Output preparation...\n");
-    AudioManipulator aOut(oDeviceIndex, "o",
-                          ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
-    if (aOut.getInitStatus() != 0) {
-        printf("Portaudio initialization error: %d\n", aOut.getInitStatus());
-        return -1;
+
+    AudioManipulator* aOut = nullptr;
+    if (!loDisabled) {
+        printf("Output preparation...\n");
+        aOut = new AudioManipulator(oDeviceIndex, "o",
+                            ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
+        if (aOut->getInitStatus() != 0) {
+            printf("Portaudio initialization error: %d\n", aOut->getInitStatus());
+            return -1;
+        }
     }
 
     char msg[256] = {};
@@ -640,8 +651,8 @@ int main(int argc, char* argv[]) {
     uint32_t aOutRbStoredLength = 0;
     uint32_t aInRbLength = aIn.getRbChunkLength();
     uint32_t aInStartThreshold = aInRbLength / 2;
-    uint32_t aOutRbLength = aOut.getRbChunkLength();
-    uint32_t aOutStartThreshold = aOutRbLength / 2;
+    uint32_t aOutRbLength = aOut ? (aOut->getRbChunkLength()) : 0;
+    uint32_t aOutStartThreshold = aOut ? (aOutRbLength / 2) : 0;
 
     unsigned long nSa = ioChunkLength*aIn.getChannelCount()*2;
     AudioData* tdarr = new AudioData[nSa];
@@ -649,7 +660,7 @@ int main(int argc, char* argv[]) {
         tdarr[ctr1].f32 = 0.0;
     }
 
-    uint32_t ioChannel = aOut.getChannelCount();
+    uint32_t ioChannel = aOut ? (aOut->getChannelCount()) : 2;
     float** deinterleaved = new float*[ioChannel];
     float** rbResult = new float*[ioChannel];
     for (uint32_t ctr1 = 0; ctr1 < ioChannel; ctr1++) {
@@ -672,8 +683,10 @@ int main(int argc, char* argv[]) {
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
     std::thread tcThr(timeCounter, sleepTime, showInterval);
     aIn.start();
-    aOut.start();
-    aOut.pause();
+    if (aOut) {
+        aOut->start();
+        aOut->pause();
+    }
     if (!isTHRU.load()) {
         rbst1->setMaxProcessSize(ioChunkLength);
     }
@@ -686,10 +699,10 @@ int main(int argc, char* argv[]) {
             }
         }
         aInRbStoredLength = aIn.getRbStoredChunkLength();
-        aOutRbStoredLength = aOut.getRbStoredChunkLength();
-        if (!isInit) {
+        aOutRbStoredLength = aOut ? (aOut->getRbStoredChunkLength()) : 0;
+        if (!isInit && aOut) {
             if (aOutRbStoredLength >= aOutStartThreshold) {
-                aOut.resume();
+                aOut->resume();
                 isInit = true;
             }
         }
@@ -718,7 +731,7 @@ int main(int argc, char* argv[]) {
         if (aInRbStoredLength >= ioChunkLength) {
             aIn.read(tdarr, ioChunkLength);
             if (showBufferHealth) {
-                for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
+                for (uint32_t ctr = 0; ctr < (ioChunkLength*ioChannel); ctr++) {
                     updateMax(tdarr[ctr].f32, &iPeakM);
                 }
                 iPeak.store(iPeakM);
@@ -754,11 +767,13 @@ int main(int argc, char* argv[]) {
                 ioLatency.store(((float)ioLatencySamples/ioFs)*1000.0);
                 AudioManipulator::interleave((AudioData**)deinterleaved, tdarr, ioChunkLength);
             }
-            aOut.write(tdarr, ioChunkLength);
+            if (aOut) {
+                aOut->write(tdarr, ioChunkLength);
+            }
             if (stConnected && streamEnabled) {
                 stNW.send_data((uint8_t*)&(tdarr[0].f32), ioChunkLength*ioChannel*sizeof(float));
             }
-            for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
+            for (uint32_t ctr = 0; ctr < (ioChunkLength*ioChannel); ctr++) {
                 updateMax(tdarr[ctr].f32, &oPeakM);
             }
             oPeak.store(oPeakM);
@@ -775,9 +790,13 @@ int main(int argc, char* argv[]) {
                 printRatBar(oPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
                 printf("|%7.2fdB\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
                 printRatBar(aInRbStoredLength, aInRbLength, barMaxLength, true, '*', ' ', true, true);
-                printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aIn.getReadEmptyCount(), aIn.getWriteFullCount(), aIn.getRxCbFrameCount());
+                printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aIn.getReadEmptyCount(),
+                                                                 aIn.getWriteFullCount(),
+                                                                 aIn.getRxCbFrameCount());
                 printRatBar(aOutRbStoredLength, aOutRbLength, barMaxLength, true, '*', ' ', true);
-                printf("| E(%d), O(%d) | %05lu\x1b[0K", aOut.getReadEmptyCount(), aOut.getWriteFullCount(), aOut.getTxCbFrameCount());
+                printf("| E(%d), O(%d) | %05lu\x1b[0K", aOut ? (aOut->getReadEmptyCount()) : 0,
+                                                        aOut ? (aOut->getWriteFullCount()) : 0,
+                                                        aOut ? (aOut->getTxCbFrameCount()) : 0);
                 printToPlace(15, 1, "\r", 2);
                 fflush(stdout);
             }
@@ -792,10 +811,17 @@ int main(int argc, char* argv[]) {
         printf("\n\n\nKeyboardInterrupt.\n");
     }
     aIn.stop();
-    aOut.stop();
+    if (aOut) {
+        aOut->stop();
+    }
     printf("\x1b[2J\x1b[1;1H\x1b[0K\n");
     aIn.terminate();
-    aOut.terminate();
+    if (aOut) {
+        aOut->terminate();
+    }
+    if (aOut) {
+        delete aOut;
+    }
     delete[] tdarr;
     for (uint32_t ctr1=0; ctr1<ioChannel; ctr1++) {
         delete[] deinterleaved[ctr1];
