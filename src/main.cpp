@@ -351,6 +351,8 @@ void showHelp() {
     printf("--tr-smooth                 (Rubberband flag) TransientsSmooth\n");
     printf("--smoothing                 (Rubberband flag) SmoothingOn\n");
     printf("--ch-together               (Rubberband flag) ChannelsTogether\n");
+    printf("--stream-dest-addr          Audio streaming destination address\n");
+    printf("--stream-dest-port          Audio streaming destination address\n");
     printf("\n--show-buffer-health             (Debug) Show buffer health in bar\n");
     printf("--barlength [len: int]           (Debug) Bar length\n");
     printf("                                         (intended for using with --show-buffer-length)\n");
@@ -360,22 +362,29 @@ void showHelp() {
 
 std::atomic<bool> tc1msecReq;
 std::atomic<bool> tcRefreshReq;
+std::atomic<bool> tcRetryReq;
 void timeCounter(struct timespec ts, int refreshTiming) {
     long tElapsed1 = 0;
-    long tElapsedR = 0;
+    long tElapsedRf = 0;
+    long tElapsedRt = 0;
     while (!KeyboardInterrupt.load()) {
         //printf("\x1b[2;1H\x1b[0KE1: %ld, ER: %ld", tElapsed1, tElapsedR);
         if (tElapsed1 > 1000000) { //1msec
             tc1msecReq.store(true);
             tElapsed1 = 0;
         }
-        if (tElapsedR > refreshTiming) {
+        if (tElapsedRf > refreshTiming) {
             tcRefreshReq.store(true);
-            tElapsedR = 0;
+            tElapsedRf = 0;
+        }
+        if (tElapsedRt > 1000000000) {
+            tcRetryReq.store(true);
+            tElapsedRt = 0;
         }
         nanosleep(&ts, nullptr);
         tElapsed1 += ts.tv_nsec;
-        tElapsedR += ts.tv_nsec;
+        tElapsedRf += ts.tv_nsec;
+        tElapsedRt += ts.tv_nsec;
     }
 }
 
@@ -397,8 +406,8 @@ int main(int argc, char* argv[]) {
         {"bind-addr", required_argument, 0, 4001},
         {"bind-port", required_argument, 0, 4002},
         {"stream", no_argument, 0, 5001},
-        {"stream-bind-addr", required_argument, 0, 5002},
-        {"stream-bind-port", required_argument, 0, 5003},
+        {"stream-dest-addr", required_argument, 0, 5002},
+        {"stream-dest-port", required_argument, 0, 5003},
         {"mono", no_argument, 0, 9001},
         {"tr-mix", no_argument, 0, 9003},
         {"tr-smooth", no_argument, 0, 9004},
@@ -437,6 +446,9 @@ int main(int argc, char* argv[]) {
     
     std::string rcomBindAddr("127.0.0.1");
     std::string rcomBindPort("63297");
+    
+    std::string stDestAddr("127.0.0.1");
+    std::string stDestPort("59959");
 
     double cRbPitchScale = 1.0;
     double cRbFormantScale = 1.0;
@@ -554,6 +566,14 @@ int main(int argc, char* argv[]) {
                 rcomBindPort.clear();
                 rcomBindPort.assign(optarg);
                 break;
+            case 5002:
+                stDestAddr.clear();
+                stDestAddr.assign(optarg);
+                break;
+            case 5003:
+                stDestPort.clear();
+                stDestPort.assign(optarg);
+                break;
             case 9001:
                 isMonoMode = true;
                 break;
@@ -634,8 +654,13 @@ int main(int argc, char* argv[]) {
     }
 
     RubberBand::RubberBandStretcher* rbst1 = nullptr;
-    if (!isTHRU.load()) {
-        rbst1 = new RubberBand::RubberBandStretcher((size_t)ioFs, ioChannel, rbOptions);
+    rbst1 = new RubberBand::RubberBandStretcher((size_t)ioFs, ioChannel, rbOptions);
+
+    network stNW(stDestAddr, stDestPort, SOCK_DGRAM);
+    bool stConnected = false;
+    if (stNW.nw_connect() == 0) {
+        stConnected = true;
+        printf("Stream: connected\n");
     }
 
     printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
@@ -649,7 +674,12 @@ int main(int argc, char* argv[]) {
     }
     while (!KeyboardInterrupt.load()) {
         nanosleep(&sleepTime, nullptr);
-        
+        if (!stConnected && tcRetryReq.load()) {
+            if (stNW.nw_connect() == 0) {
+                stConnected = true;
+                printf("Stream: connected\n");
+            }
+        }
         aInRbStoredLength = aIn.getRbStoredChunkLength();
         aOutRbStoredLength = aOut.getRbStoredChunkLength();
         if (!isInit) {
@@ -663,6 +693,22 @@ int main(int argc, char* argv[]) {
                 aInInit = true;
             }
             continue;
+        }
+        if (cRbTimeRatio != rbTimeRatio.load()) {
+            rbst1->reset();
+            cRbTimeRatio = rbTimeRatio.load();
+            snprintf(msg, 256, "Time ratio changed to %5.3lf\x1b[0K\n", rbTimeRatio.load());
+            printToPlace(5, 1, msg, 256);
+        }
+        if (cRbFormantScale != rbFormantScale.load()) {
+            cRbFormantScale = rbFormantScale.load();
+            snprintf(msg, 256, "Formant scale changed to %5.3lf\x1b[0K\n", rbFormantScale.load());
+            printToPlace(5, 1, msg, 256);
+        }
+        if (cRbPitchScale != rbPitchScale.load()) {
+            cRbPitchScale = rbPitchScale.load();
+            snprintf(msg, 256, "Pitch scale changed to %5.3lf\x1b[0K\n", rbPitchScale.load());
+            printToPlace(5, 1, msg, 256);
         }
         if (aInRbStoredLength >= ioChunkLength) {
             aIn.read(tdarr, ioChunkLength);
@@ -688,22 +734,6 @@ int main(int argc, char* argv[]) {
                 ioLatencySamples.store(rbst1->getStartDelay() + ioRBLength);
                 ioLatency.store(((float)ioLatencySamples/ioFs)*1000.0);
                 if (rbst1->available() > ioChunkLength) {
-                    if (cRbTimeRatio != rbTimeRatio.load()) {
-                        rbst1->reset();
-                        cRbTimeRatio = rbTimeRatio.load();
-                        snprintf(msg, 256, "Time ratio changed to %5.3lf\x1b[0K\n", rbTimeRatio.load());
-                        printToPlace(5, 1, msg, 256);
-                    }
-                    if (cRbFormantScale != rbFormantScale.load()) {
-                        cRbFormantScale = rbFormantScale.load();
-                        snprintf(msg, 256, "Formant scale changed to %5.3lf\x1b[0K\n", rbFormantScale.load());
-                        printToPlace(5, 1, msg, 256);
-                    }
-                    if (cRbPitchScale != rbPitchScale.load()) {
-                        cRbPitchScale = rbPitchScale.load();
-                        snprintf(msg, 256, "Pitch scale changed to %5.3lf\x1b[0K\n", rbPitchScale.load());
-                        printToPlace(5, 1, msg, 256);
-                    }
                     rbst1->retrieve(rbResult, ioChunkLength);
                     if (isMonoMode) {
                         for (uint32_t idx=0; idx<ioChunkLength; idx++) {
@@ -713,31 +743,25 @@ int main(int argc, char* argv[]) {
                         }
                     }
                     AudioManipulator::interleave((AudioData**)rbResult, tdarr, ioChunkLength);
-
-                    aOut.write(tdarr, ioChunkLength);
-
-                    for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
-                        updateMax(tdarr[ctr].f32, &oPeakM);
-                    }
-                    oPeak.store(oPeakM);
                 }
             } else {
                 ioLatencySamples.store(ioRBLength);
                 ioLatency.store(((float)ioLatencySamples/ioFs)*1000.0);
                 AudioManipulator::interleave((AudioData**)deinterleaved, tdarr, ioChunkLength);
-                aOut.write(tdarr, ioChunkLength);
-                if (showBufferHealth) {
-                    for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
-                        updateMax(tdarr[ctr].f32, &oPeakM);
-                    }
-                    oPeak.store(oPeakM);
-                }
             }
+            aOut.write(tdarr, ioChunkLength);
+            if (stConnected) {
+                stNW.send_data((uint8_t*)&(tdarr[0].f32), ioChunkLength*ioChannel*sizeof(float));
+            }
+            for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
+                updateMax(tdarr[ctr].f32, &oPeakM);
+            }
+            oPeak.store(oPeakM);
         }
         if (tcRefreshReq.load()) {
             if (showBufferHealth) {
                 snprintf(msg, 256, " PARAM| P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
-                rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1?(rbst1->available()):0);
+                rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1->available());
                 printToPlace(6, 1, msg, 256);
                 printf("\x1b[7;1H INPUT|");
                 printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
