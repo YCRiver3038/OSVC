@@ -662,14 +662,13 @@ int main(int argc, char* argv[]) {
 
     network stNW(stDestAddr, stDestPort, SOCK_DGRAM);
     bool stConnected = false;
+    printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     if (streamEnabled) {
         if (stNW.nw_connect() == 0) {
             stConnected = true;
             printf("Stream: connected\n");
         }
     }
-
-    printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
     std::thread tcThr(timeCounter, sleepTime, showInterval);
     aIn.start();
