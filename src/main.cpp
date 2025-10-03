@@ -430,6 +430,7 @@ int main(int argc, char* argv[]) {
     bool listDevices = false;
     bool showBufferHealth = false;
     bool isMonoMode = false;
+    bool streamEnabled = false;
     int getoptStatus = 0;
     int optionIndex = 0;
     int iDeviceIndex = 0;
@@ -566,6 +567,9 @@ int main(int argc, char* argv[]) {
                 rcomBindPort.clear();
                 rcomBindPort.assign(optarg);
                 break;
+            case 5001:
+                streamEnabled = true;
+                break;
             case 5002:
                 stDestAddr.clear();
                 stDestAddr.assign(optarg);
@@ -658,10 +662,13 @@ int main(int argc, char* argv[]) {
 
     network stNW(stDestAddr, stDestPort, SOCK_DGRAM);
     bool stConnected = false;
-    if (stNW.nw_connect() == 0) {
-        stConnected = true;
-        printf("Stream: connected\n");
+    if (streamEnabled) {
+        if (stNW.nw_connect() == 0) {
+            stConnected = true;
+            printf("Stream: connected\n");
+        }
     }
+
 
     printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
@@ -674,7 +681,7 @@ int main(int argc, char* argv[]) {
     }
     while (!KeyboardInterrupt.load()) {
         nanosleep(&sleepTime, nullptr);
-        if (!stConnected && tcRetryReq.load()) {
+        if (!stConnected && tcRetryReq.load() && streamEnabled) {
             if (stNW.nw_connect() == 0) {
                 stConnected = true;
                 printf("Stream: connected\n");
@@ -750,7 +757,7 @@ int main(int argc, char* argv[]) {
                 AudioManipulator::interleave((AudioData**)deinterleaved, tdarr, ioChunkLength);
             }
             aOut.write(tdarr, ioChunkLength);
-            if (stConnected) {
+            if (stConnected && streamEnabled) {
                 stNW.send_data((uint8_t*)&(tdarr[0].f32), ioChunkLength*ioChannel*sizeof(float));
             }
             for (uint32_t ctr = 0; ctr < (ioChunkLength*aOut.getChannelCount()); ctr++) {
