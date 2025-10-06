@@ -9,13 +9,13 @@
 #include <string>
 #include "stdio.h"
 #include "string.h"
+#include "stdint.h"
 
 #include "errno.h"
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "ws2tcpip.h"
 #include "winsock.h"
-#include "stdint.h"
 #define poll(fdArray, fds, timeout) WSAPoll(fdArray, fds, timeout)
 #define close(close_fd) closesocket(close_fd)
 #else
