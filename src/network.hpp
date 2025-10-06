@@ -180,7 +180,7 @@ template <typename DTYPE> ssize_t network::recv_data(DTYPE* data_dest, ssize_t n
     }
   } else {
 #ifdef _GNU_SOURCE
-    const short rd_hup_mask = 0|POLLRDHUP;
+    const short rd_hup_mask = 0|POLLRDHUP|POLLHUP;
 #else
     const short rd_hup_mask = 0|POLLHUP;
 #endif

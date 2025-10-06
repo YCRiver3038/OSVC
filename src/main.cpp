@@ -149,9 +149,10 @@ void rcom(std::string addr, std::string port) {
             printToPlace(5, 1, " ", 2);
             printf("\rClient %d accepted\x1b[0K\n", acfd);
             sbuf[0] = SRV_MSG;
-            memcpy(&(sbuf[1]), "OSVC > " ,8);
+            memcpy(&(sbuf[1]), "OSVC > " , 8);
             rc->send_data(sbuf, 9);
             while (!KeyboardInterrupt.load()) {
+                memset(sbuf, 16384, sizeof(uint8_t));
                 rdstatus = rc->recv_data(rbuf, 16384);
                 if (rdstatus <= 0) {
                     if (rdstatus != EM_CONNECTION_TIMEDOUT) {

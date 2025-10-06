@@ -21,11 +21,13 @@ void rcvthr(network& rc) {
     std::string statstr;
     trdtype rdata;
     while (!KeyboardInterrupt.load()) {
+        memset(rbuf, 1024, sizeof(uint8_t));
         rcStatus = rc.recv_data(rbuf, 1024);
         if (rcStatus < 0) {
             if (rcStatus != EM_CONNECTION_TIMEDOUT) {
                 rc.errno_to_string(rcStatus, statstr);
                 printf("\nrecv status: %s ( %zd )\n", statstr.c_str(), rcStatus);
+                rc.nw_close();
                 KeyboardInterrupt.load();
                 break;
             }
@@ -207,6 +209,7 @@ int main(int argc, char* argv[]) {
             command.at(ctrc) = std::tolower(command.at(ctrc));
         }
         if (command == "q") {
+            con1.nw_close();
             KeyboardInterrupt.store(true);
             continue;
         }
