@@ -187,6 +187,11 @@ void rcom(std::string addr, std::string port) {
                             }
                             rctr += 5;
                             break;
+                        case SET_OUTPUT_VOLUME: // value: float32
+                            memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
+                            oVolume.store(rdata.f32);
+                            rctr += 5;
+                            break;
                         case SET_TR_PITCH_FOLLOW: // no following value
                             tr_pitch_follow = true;
                             rctr++;
@@ -281,6 +286,16 @@ void rcom(std::string addr, std::string port) {
                         case QUERY_LATENCY_SAMPLES: // No following value
                             sbuf[0] = (uint8_t)INFO_LATENCY_SAMPLES;
                             tdata.u32 = ioLatencySamples.load();
+                            memcpy(&(sbuf[1]), tdata.u8, 4);
+                            sendStatus = rc->send_data(sbuf, 5);
+                            if (sendStatus <= 0){
+                                printf("Send error ( %zd )\n", sendStatus);
+                            }
+                            rctr++;
+                            break;
+                        case QUERY_OUTPUT_VOLUME: // No following value
+                            sbuf[0] = (uint8_t)INFO_OUTPUT_VOLUME;
+                            tdata.f32 = oVolume.load();
                             memcpy(&(sbuf[1]), tdata.u8, 4);
                             sendStatus = rc->send_data(sbuf, 5);
                             if (sendStatus <= 0){
@@ -768,6 +783,9 @@ int main(int argc, char* argv[]) {
                 ioLatency.store(((float)ioLatencySamples/ioFs)*1000.0);
                 AudioManipulator::interleave((AudioData**)deinterleaved, tdarr, ioChunkLength);
             }
+            for (uint32_t vctr = 0; vctr < (ioChunkLength*ioChannel); vctr++) {
+                tdarr[vctr].f32 *= oVolume.load();
+            }
             if (aOut) {
                 aOut->write(tdarr, ioChunkLength);
             }
@@ -781,8 +799,10 @@ int main(int argc, char* argv[]) {
         }
         if (tcRefreshReq.load()) {
             if (showBufferHealth) {
-                snprintf(msg, 256, " PARAM| P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
-                rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(), ioLatencySamples.load(), ioLatency.load(), rbst1->available());
+                snprintf(msg, 256, " PARAM| OV: %5.3lf | P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
+                oVolume.load(),
+                rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(),
+                ioLatencySamples.load(), ioLatency.load(), rbst1->available());
                 printToPlace(6, 1, msg, 256);
                 printf("\x1b[7;1H INPUT|");
                 printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);

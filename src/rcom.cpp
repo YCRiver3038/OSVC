@@ -80,6 +80,9 @@ void rcvthr(network& rc) {
                     rdctr += 5;
                     printf("Info: Input Level: %f\n", rdata.f32);
                     break;
+                case INFO_INPUT_DEVICE:  // value: Text/json
+                    rdctr++;
+                    break;
                 case INFO_OUTPUT_LEVEL_DB:    // value: float32
                     memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
                     rdctr += 5;
@@ -90,6 +93,14 @@ void rcvthr(network& rc) {
                     rdctr += 5;
                     printf("Info: Output Level: %f\n", rdata.f32);
                     break;
+                case INFO_OUTPUT_VOLUME:   // value: float32
+                    memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
+                    rdctr += 5;
+                    printf("Info: Output Volume: %f\n", rdata.f32);
+                    break;
+                case INFO_OUTPUT_DEVICE: // value: Text/json
+                    rdctr++;
+                    break;
                 case INFO_LATENCY_MSEC:       // value: float32
                     memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
                     rdctr += 5;
@@ -99,12 +110,6 @@ void rcvthr(network& rc) {
                     memcpy(rdata.u8, &(rbuf[rdctr+1]), 4);
                     rdctr += 5;
                     printf("Info: Latency: %u[sample]\n", rdata.u32);
-                    break;
-                case INFO_INPUT_DEVICE:  // value: Text/json
-                    rdctr++;
-                    break;
-                case INFO_OUTPUT_DEVICE: // value: Text/json
-                    rdctr++;
                     break;
                 default:
                     rdctr++;
@@ -193,6 +198,7 @@ int main(int argc, char* argv[]) {
     float rbPitchScale = 0.0;
     float rbFormantScale = 0.0;
     float rbTimeRatio = 0.0;
+    float oVol = 1.0;
 
     uint8_t tbuf[1024] = {};
     trdtype tdata;
@@ -258,6 +264,21 @@ int main(int argc, char* argv[]) {
             con1.send_data(tbuf, 5);
             continue;
         }
+        if (command == "ov") {
+            printf("Output Volume > ");
+            std::cin >> command;
+            try {
+                oVol = std::stod(command.c_str());
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value\n");
+                continue;
+            }
+            tdata.f32 = oVol;
+            tbuf[0] = SET_OUTPUT_VOLUME;
+            memcpy(&(tbuf[1]), tdata.u8, 4);
+            con1.send_data(tbuf, 5);
+            continue;
+        }
         if (command == "tpf") { // pitch follows time scale
             tbuf[0] = SET_TR_PITCH_FOLLOW;
             con1.send_data(tbuf, 1);
@@ -290,6 +311,11 @@ int main(int argc, char* argv[]) {
         }
         if (command == "qop") {
             tbuf[0] = QUERY_OUTPUT_LEVEL_DB;
+            con1.send_data(tbuf, 1);
+            continue;
+        }
+        if (command == "qov") {
+            tbuf[0] = QUERY_OUTPUT_VOLUME;
             con1.send_data(tbuf, 1);
             continue;
         }

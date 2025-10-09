@@ -44,13 +44,16 @@ enum {
     INFO_LATENCY_SAMPLES,    // value: unsigned int32
     INFO_INPUT_DEVICE,  // value: Text/json
     INFO_OUTPUT_DEVICE, // value: Text/json
-    REC_START,      // No following value
+    REC_START,       // No following value
     REC_STOP,        // No following value
-    MODE_THRU,      // No following value
-    MODE_PROCESSED, //No following value
-    STREAM_DATA,    //value: float32 array
-    STREAM_LENGTH   // value: unsigned int32
-} cParams; // rcParams itself is transmitted in format uint8
+    MODE_THRU,       // No following value
+    MODE_PROCESSED,  //No following value
+    STREAM_DATA,     //value: float32 array
+    STREAM_LENGTH,   // value: unsigned int32
+    SET_OUTPUT_VOLUME,   // value: float32
+    INFO_OUTPUT_VOLUME,  // value: float32
+    QUERY_OUTPUT_VOLUME  // No following value
+} cParams; // cParams itself is transmitted in format uint8
 
 typedef union {
     uint8_t u8[4];

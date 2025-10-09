@@ -30,3 +30,4 @@ std::atomic<uint32_t> ioLatencySamples = 0;
 std::atomic<float> iPeak = 0;
 std::atomic<float> oPeak = 0;
 std::atomic<bool> isTHRU = false;
+std::atomic<float> oVolume = 1.0;
