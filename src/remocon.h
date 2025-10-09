@@ -47,8 +47,8 @@ enum {
     REC_START,       // No following value
     REC_STOP,        // No following value
     MODE_THRU,       // No following value
-    MODE_PROCESSED,  //No following value
-    STREAM_DATA,     //value: float32 array
+    MODE_PROCESSED,  // No following value
+    STREAM_DATA,     // value: float32 array
     STREAM_LENGTH,   // value: unsigned int32
     SET_OUTPUT_VOLUME,   // value: float32
     INFO_OUTPUT_VOLUME,  // value: float32
