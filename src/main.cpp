@@ -475,6 +475,9 @@ int main(int argc, char* argv[]) {
     double cRbFormantScale = 1.0;
     double cRbTimeRatio = 1.0;
 
+    bool ilClip = false;
+    bool olClip = false;
+
     RubberBand::RubberBandStretcher::Options rbOptions;
     rbOptions = RubberBand::RubberBandStretcher::OptionProcessRealTime  |
                 RubberBand::RubberBandStretcher::OptionFormantPreserved |
@@ -799,6 +802,8 @@ int main(int argc, char* argv[]) {
         }
         if (tcRefreshReq.load()) {
             if (showBufferHealth) {
+                ilClip = (iPeak.load() >= 1.0);
+                olClip = (oPeak.load() >= 1.0);
                 snprintf(msg, 256, " PARAM| OV: %5.3lf | P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
                 oVolume.load(),
                 rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(),
@@ -806,10 +811,18 @@ int main(int argc, char* argv[]) {
                 printToPlace(6, 1, msg, 256);
                 printf("\x1b[7;1H INPUT|");
                 printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
-                printf("|%7.2fdB\x1b[0K", 20*log10f(iPeak.load()));
+                if (!ilClip) {
+                    printf("|%7.2fdB\x1b[0K", 20*log10f(iPeak.load()));
+                } else {
+                    printf("|\x1b[041m\x1b[097m%7.2fdB\x1b[0m\x1b[0K", 20*log10f(iPeak.load()));
+                }
                 printf("\nOUTPUT|");
                 printRatBar(oPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
-                printf("|%7.2fdB\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
+                if (!olClip) {
+                    printf("|%7.2fdB\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
+                } else {
+                    printf("|\x1b[041m\x1b[097m%7.2fdB\x1b[0m\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
+                }
                 printRatBar(aInRbStoredLength, aInRbLength, barMaxLength, true, '*', ' ', true, true);
                 printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aIn.getReadEmptyCount(),
                                                                  aIn.getWriteFullCount(),

@@ -122,11 +122,14 @@ template <typename DTYPE> class ring_buffer {
             }
         }
         DTYPE get_data_single(){
+            DTYPE ret_data;
             std::lock_guard<std::mutex> buf_sget_lock(mx_buf_guard);
+            ret_data = buffer_arr[read_start_idx];
             if (stored_length != 0) {
                 stored_length--;
             }
-            return buffer_arr[h_idx];
+            read_start_idx = (read_start_idx+1) % blength;
+            return ret_data;
         }
         DTYPE get_data_single_queue() {
             DTYPE data;
