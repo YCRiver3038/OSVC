@@ -386,7 +386,6 @@ void timeCounter(struct timespec ts, int refreshTiming) {
     long tElapsedRf = 0;
     long tElapsedRt = 0;
     while (!KeyboardInterrupt.load()) {
-        //printf("\x1b[2;1H\x1b[0KE1: %ld, ER: %ld", tElapsed1, tElapsedR);
         if (tElapsed1 > 1000000) { //1msec
             tc1msecReq.store(true);
             tElapsed1 = 0;
@@ -403,6 +402,59 @@ void timeCounter(struct timespec ts, int refreshTiming) {
         tElapsed1 += ts.tv_nsec;
         tElapsedRf += ts.tv_nsec;
         tElapsedRt += ts.tv_nsec;
+    }
+}
+
+void statusWindow(AudioManipulator* const aIn, AudioManipulator* const aOut,
+                  RubberBand::RubberBandStretcher* const rbst1,
+                  uint32_t const aInRbLength, uint32_t const aOutRbLength,
+                  int const barMaxLength, bool execute) {
+    if (!execute) {
+        return;
+    }
+
+    bool ilClip = false;
+    bool olClip = false;
+    char msg[256] = {};
+    struct timespec sleepTime = {0};
+    sleepTime.tv_nsec = 1000000; //1msec
+
+    while (!KeyboardInterrupt.load()) {
+        if (tcRefreshReq.load()) {
+            ilClip = (iPeak.load() >= 1.0);
+            olClip = (oPeak.load() >= 1.0);
+            snprintf(msg, 256,
+                    " PARAM| OV: %5.3lf | P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
+                    oVolume.load(),
+                    rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(),
+                    ioLatencySamples.load(), ioLatency.load(), rbst1->available());
+            printToPlace(6, 1, msg, 256);
+            printf("\x1b[7;1H INPUT|");
+            printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
+            if (!ilClip) {
+                printf("|%7.2fdB\x1b[0K", 20*log10f(iPeak.load()));
+            } else {
+                printf("|\x1b[041m\x1b[097m%7.2fdB\x1b[0m\x1b[0K", 20*log10f(iPeak.load()));
+            }
+            printf("\nOUTPUT|");
+            printRatBar(oPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
+            if (!olClip) {
+                printf("|%7.2fdB\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
+            } else {
+                printf("|\x1b[041m\x1b[097m%7.2fdB\x1b[0m\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
+            }
+            printRatBar(aInRbStoredLength.load(), aInRbLength, barMaxLength, true, '*', ' ', true, true);
+            printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aIn ? (aIn->getReadEmptyCount()) : 0,
+                                                            aIn ? (aIn->getWriteFullCount()) : 0,
+                                                            aIn ? (aIn->getRxCbFrameCount()) : 0);
+            printRatBar(aOutRbStoredLength.load(), aOutRbLength, barMaxLength, true, '*', ' ', true);
+            printf("| E(%d), O(%d) | %05lu\x1b[0K", aOut ? (aOut->getReadEmptyCount()) : 0,
+                                                    aOut ? (aOut->getWriteFullCount()) : 0,
+                                                    aOut ? (aOut->getTxCbFrameCount()) : 0);
+            printToPlace(15, 1, "\r", 2);
+            fflush(stdout);
+        }
+        nanosleep(&sleepTime, nullptr);
     }
 }
 
@@ -640,13 +692,18 @@ int main(int argc, char* argv[]) {
 
     printf("Input preparation...\n");
     bool monoInput = false;
-    AudioManipulator aIn(iDeviceIndex, "i",
-                         ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
-    if (aIn.getInitStatus() != 0) {
-        printf("Portaudio initialization error: %d\n", aIn.getInitStatus());
+    AudioManipulator* aIn;
+    aIn = new AudioManipulator(iDeviceIndex, "i",
+                               ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
+    if (!aIn) {
+        printf("Audio input device initialization error.\n");
         return -1;
     }
-    if (aIn.getChannelCount() == 1) {
+    if (aIn->getInitStatus() != 0) {
+        printf("Portaudio initialization error: %d\n", aIn->getInitStatus());
+        return -1;
+    }
+    if (aIn->getChannelCount() == 1) {
         monoInput = true;
     }
 
@@ -666,14 +723,13 @@ int main(int argc, char* argv[]) {
     float oPeakM = 0.0;
     bool isInit = false;
     bool aInInit = false;
-    uint32_t aInRbStoredLength = 0;
-    uint32_t aOutRbStoredLength = 0;
-    uint32_t aInRbLength = aIn.getRbChunkLength();
+
+    uint32_t aInRbLength = aIn->getRbChunkLength();
     uint32_t aInStartThreshold = aInRbLength / 2;
     uint32_t aOutRbLength = aOut ? (aOut->getRbChunkLength()) : 0;
     uint32_t aOutStartThreshold = aOut ? (aOutRbLength / 2) : 0;
 
-    unsigned long nSa = ioChunkLength*aIn.getChannelCount()*2;
+    unsigned long nSa = ioChunkLength*(aIn->getChannelCount())*2;
     AudioData* tdarr = new AudioData[nSa];
     for (uint32_t ctr1 = 0; ctr1 < nSa; ctr1++) {
         tdarr[ctr1].f32 = 0.0;
@@ -699,9 +755,14 @@ int main(int argc, char* argv[]) {
             printf("Stream: connected\n");
         }
     }
+
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
     std::thread tcThr(timeCounter, sleepTime, showInterval);
-    aIn.start();
+    std::thread stWinThr(statusWindow,
+                         aIn, aOut, rbst1,
+                         aInRbLength, aOutRbLength, barMaxLength,
+                         showBufferHealth);
+    aIn->start();
     if (aOut) {
         aOut->start();
         aOut->pause();
@@ -717,16 +778,16 @@ int main(int argc, char* argv[]) {
                 printf("Stream: connected\n");
             }
         }
-        aInRbStoredLength = aIn.getRbStoredChunkLength();
-        aOutRbStoredLength = aOut ? (aOut->getRbStoredChunkLength()) : 0;
+        aInRbStoredLength.store(aIn->getRbStoredChunkLength());
+        aOutRbStoredLength.store(aOut ? (aOut->getRbStoredChunkLength()) : 0);
         if (!isInit && aOut) {
-            if (aOutRbStoredLength >= aOutStartThreshold) {
+            if (aOutRbStoredLength.load() >= aOutStartThreshold) {
                 aOut->resume();
                 isInit = true;
             }
         }
         if (!aInInit) {
-            if (aInRbStoredLength >= aInStartThreshold) {
+            if (aInRbStoredLength.load() >= aInStartThreshold) {
                 aInInit = true;
             }
             continue;
@@ -747,14 +808,14 @@ int main(int argc, char* argv[]) {
             snprintf(msg, 256, "Pitch scale changed to %5.3lf\x1b[0K\n", rbPitchScale.load());
             printToPlace(5, 1, msg, 256);
         }
-        if (aInRbStoredLength >= ioChunkLength) {
-            aIn.read(tdarr, ioChunkLength);
-            if (showBufferHealth) {
-                for (uint32_t ctr = 0; ctr < (ioChunkLength*ioChannel); ctr++) {
-                    updateMax(tdarr[ctr].f32, &iPeakM);
-                }
-                iPeak.store(iPeakM);
+        if (aInRbStoredLength.load() >= ioChunkLength) {
+            aIn->read(tdarr, ioChunkLength);
+            // input peak level detect
+            for (uint32_t ctr = 0; ctr < (ioChunkLength*ioChannel); ctr++) {
+                updateMax(tdarr[ctr].f32, &iPeakM);
             }
+            iPeak.store(iPeakM);
+            
             if (!monoInput) {
                 AudioManipulator::deinterleave(tdarr, (AudioData**)deinterleaved, ioChunkLength);
             }  else {
@@ -795,61 +856,27 @@ int main(int argc, char* argv[]) {
             if (stConnected && streamEnabled) {
                 stNW.send_data((uint8_t*)&(tdarr[0].f32), ioChunkLength*ioChannel*sizeof(float));
             }
+            // output peak level detect
             for (uint32_t ctr = 0; ctr < (ioChunkLength*ioChannel); ctr++) {
                 updateMax(tdarr[ctr].f32, &oPeakM);
             }
             oPeak.store(oPeakM);
         }
         if (tcRefreshReq.load()) {
-            if (showBufferHealth) {
-                ilClip = (iPeak.load() >= 1.0);
-                olClip = (oPeak.load() >= 1.0);
-                snprintf(msg, 256, " PARAM| OV: %5.3lf | P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
-                oVolume.load(),
-                rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(),
-                ioLatencySamples.load(), ioLatency.load(), rbst1->available());
-                printToPlace(6, 1, msg, 256);
-                printf("\x1b[7;1H INPUT|");
-                printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
-                if (!ilClip) {
-                    printf("|%7.2fdB\x1b[0K", 20*log10f(iPeak.load()));
-                } else {
-                    printf("|\x1b[041m\x1b[097m%7.2fdB\x1b[0m\x1b[0K", 20*log10f(iPeak.load()));
-                }
-                printf("\nOUTPUT|");
-                printRatBar(oPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
-                if (!olClip) {
-                    printf("|%7.2fdB\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
-                } else {
-                    printf("|\x1b[041m\x1b[097m%7.2fdB\x1b[0m\x1b[0K\n   IRB|", 20*log10f(oPeak.load()));
-                }
-                printRatBar(aInRbStoredLength, aInRbLength, barMaxLength, true, '*', ' ', true, true);
-                printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aIn.getReadEmptyCount(),
-                                                                 aIn.getWriteFullCount(),
-                                                                 aIn.getRxCbFrameCount());
-                printRatBar(aOutRbStoredLength, aOutRbLength, barMaxLength, true, '*', ' ', true);
-                printf("| E(%d), O(%d) | %05lu\x1b[0K", aOut ? (aOut->getReadEmptyCount()) : 0,
-                                                        aOut ? (aOut->getWriteFullCount()) : 0,
-                                                        aOut ? (aOut->getTxCbFrameCount()) : 0);
-                printToPlace(15, 1, "\r", 2);
-                fflush(stdout);
-            }
             iPeakM = 0.0;
             oPeakM = 0.0;
-            iPeak.store(0.0);
-            oPeak.store(0.0);
-            tcRefreshReq.store(false);
         }
     }
     if (KeyboardInterrupt.load()){
         printf("\n\n\nKeyboardInterrupt.\n");
     }
-    aIn.stop();
+    aIn->stop();
     if (aOut) {
         aOut->stop();
     }
     printf("\x1b[0m\x1b[2J\x1b[1;1H\x1b[0K\n");
-    aIn.terminate();
+    aIn->terminate();
+    delete aIn;
     if (aOut) {
         aOut->terminate();
     }
@@ -868,5 +895,6 @@ int main(int argc, char* argv[]) {
     }
     rcomt.join();
     tcThr.join();
+    stWinThr.join();
     return 0;
 }
