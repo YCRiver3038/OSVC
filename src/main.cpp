@@ -848,7 +848,7 @@ int main(int argc, char* argv[]) {
     if (aOut) {
         aOut->stop();
     }
-    printf("\x1b[2J\x1b[1;1H\x1b[0K\n");
+    printf("\x1b[0m\x1b[2J\x1b[1;1H\x1b[0K\n");
     aIn.terminate();
     if (aOut) {
         aOut->terminate();
