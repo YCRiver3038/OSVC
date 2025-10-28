@@ -424,12 +424,13 @@ void statusWindow(AudioManipulator* const aIn, AudioManipulator* const aOut,
             ilClip = (iPeak.load() >= 1.0);
             olClip = (oPeak.load() >= 1.0);
             snprintf(msg, 256,
-                    " PARAM| OV: %5.3lf | P: %5.3lf | F: %5.3lf | T: %5.3lf| L: %6u (%5.1fmsec) | A: %6d",
+                    " PARAM| OV: %5.3lf | P: %5.3lf | F: %5.3lf | T: %5.3lf|\n"
+                    "      | L: %6u (%5.1fmsec) | A: %6d",
                     oVolume.load(),
                     rbPitchScale.load(), rbFormantScale.load(), rbTimeRatio.load(),
                     ioLatencySamples.load(), ioLatency.load(), rbst1->available());
             printToPlace(6, 1, msg, 256);
-            printf("\x1b[7;1H INPUT|");
+            printf("\x1b[8;1H INPUT|");
             printRatBar(iPeak.load(), 1.0, barMaxLength, false, ' ', ' ', true, true);
             if (!ilClip) {
                 printf("|%7.2fdB\x1b[0K", 20*log10f(iPeak.load()));
@@ -453,6 +454,7 @@ void statusWindow(AudioManipulator* const aIn, AudioManipulator* const aOut,
                                                     aOut ? (aOut->getTxCbFrameCount()) : 0);
             printToPlace(15, 1, "\r", 2);
             fflush(stdout);
+            tcRefreshReq.store(false);
         }
         nanosleep(&sleepTime, nullptr);
     }
