@@ -74,12 +74,12 @@ void updateMax(float val, float* dest){
 }
 
 void printToPlace(int row, int col, std::string& txt) {
-    printf("\x1b[%d;%dH%s\x1b[0K", row, col, txt.c_str());
+    printf("\x1b[%d;%dH\x1b[0K%s", row, col, txt.c_str());
 }
 
 void printToPlace(int row, int col, const char* txt, size_t length) {
     std::string msg(txt, length);
-    printf("\x1b[%d;%dH%s\x1b[0K", row, col, msg.c_str());
+    printf("\x1b[%d;%dH\x1b[0K%s", row, col, msg.c_str());
 }
 
 void tokenize(std::string& coms, std::vector<std::string>& tokenized) {

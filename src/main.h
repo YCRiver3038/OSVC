@@ -17,6 +17,8 @@
 #include "time.h"
 #include "signal.h"
 
+#include <sys/mman.h>
+
 #include "rubberband/RubberBandStretcher.h"
 
 #include "AudioManipulator.hpp"
