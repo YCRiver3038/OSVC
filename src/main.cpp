@@ -540,6 +540,10 @@ int main(int argc, char* argv[]) {
                 RubberBand::RubberBandStretcher::OptionSmoothingOff     |
                 RubberBand::RubberBandStretcher::OptionWindowStandard;
 
+    rbPitchScale = 1.0;
+    rbFormantScale = 1.0;
+    rbTimeRatio = 1.0;
+    oVolume = 1.0;
     do {
         getoptStatus = getopt_long(argc, argv, "", long_options, &optionIndex);
         switch (getoptStatus) {

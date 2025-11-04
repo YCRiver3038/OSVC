@@ -22,14 +22,14 @@
 #include "AudioManipulator.hpp"
 
 // Global Variables
-std::atomic<double> rbPitchScale = 1.0;
-std::atomic<double> rbFormantScale = 1.0;
-std::atomic<double> rbTimeRatio = 1.0;
-std::atomic<float> ioLatency = 0.0;
-std::atomic<uint32_t> ioLatencySamples = 0;
-std::atomic<float> iPeak = 0;
-std::atomic<float> oPeak = 0;
-std::atomic<bool> isTHRU = false;
-std::atomic<float> oVolume = 1.0;
-std::atomic<uint32_t> aInRbStoredLength = 0;
-std::atomic<uint32_t> aOutRbStoredLength = 0;
+std::atomic<double> rbPitchScale;
+std::atomic<double> rbFormantScale;
+std::atomic<double> rbTimeRatio;
+std::atomic<float> ioLatency;
+std::atomic<uint32_t> ioLatencySamples;
+std::atomic<float> iPeak;
+std::atomic<float> oPeak;
+std::atomic<bool> isTHRU;
+std::atomic<float> oVolume;
+std::atomic<uint32_t> aInRbStoredLength;
+std::atomic<uint32_t> aOutRbStoredLength;
