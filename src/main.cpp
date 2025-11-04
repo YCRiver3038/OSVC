@@ -847,14 +847,19 @@ int main(int argc, char* argv[]) {
                         }
                     }
                     AudioManipulator::interleave((AudioData**)rbResult, tdarr, ioChunkLength);
+                    // Output volume manipulate
+                    for (uint32_t vctr = 0; vctr < (ioChunkLength*ioChannel); vctr++) {
+                        tdarr[vctr].f32 *= oVolume.load();
+                    }
                 }
             } else {
                 ioLatencySamples.store(ioRBLength);
                 ioLatency.store(((float)ioLatencySamples/ioFs)*1000.0);
                 AudioManipulator::interleave((AudioData**)deinterleaved, tdarr, ioChunkLength);
-            }
-            for (uint32_t vctr = 0; vctr < (ioChunkLength*ioChannel); vctr++) {
-                tdarr[vctr].f32 *= oVolume.load();
+                // Output volume manipulate
+                for (uint32_t vctr = 0; vctr < (ioChunkLength*ioChannel); vctr++) {
+                    tdarr[vctr].f32 *= oVolume.load();
+                }
             }
             if (aOut) {
                 aOut->write(tdarr, ioChunkLength);
