@@ -5,10 +5,8 @@ import socket
 import selectors
 import argparse
 import queue
-import time
 
 import numpy as np
-import pyaudio
 
 import sound_device
 import windowfuncs
@@ -77,11 +75,10 @@ def lb_starter(fs, n_ch_o, res, dev_idx,
 
 if __name__ == '__main__':
     rcv_bind_ip = '127.0.0.1'
-    rcv_bind_port = 60288
+    rcv_bind_port = 59959
     aud_fsample = 48000
     aud_dev = 0
-    aud_res = pyaudio.paInt16
-    res_str = "16"
+    res_str = "f32"
 
     ca_parser = argparse.ArgumentParser(description='')
     ca_parser.add_argument("--src-address",  help="IPv4 Address to bind")
@@ -98,19 +95,7 @@ if __name__ == '__main__':
     if parsed_args_dict['src_port'] is not None:
         rcv_bind_port = parsed_args_dict['src_port']
     if parsed_args_dict['aud_list'] is True:
-        audio_port = pyaudio.PyAudio()
-        device_count = audio_port.get_device_count()
-        print("\n Output list\n -------------")
-        for idx in range(0, device_count, 1):
-            dev_info = audio_port.get_device_info_by_index(idx)
-            if dev_info['maxOutputChannels'] > 0:
-                print(f" {audio_port.get_host_api_info_by_index(dev_info['hostApi'])['name']}"
-                      f" | device{idx}: {dev_info['name']},"
-                      f" max input channel: {dev_info['maxInputChannels']},"
-                      f" max output channel: {dev_info['maxOutputChannels']},"
-                      f" default sample rate:{dev_info['defaultSampleRate']}")
-        print(" -------------\n")
-        audio_port.terminate()
+        sound_device.list_devices()
         sys.exit()
     if parsed_args_dict['aud_fs'] is not None:
         aud_fsample = parsed_args_dict['aud_fs']
@@ -138,7 +123,7 @@ if __name__ == '__main__':
     lb_thr.start()
     e_recv_thr.start()
     dsp_thr.start()
-    
+
     running = True
     try:
         print(
