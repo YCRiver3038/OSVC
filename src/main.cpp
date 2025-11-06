@@ -763,11 +763,16 @@ int main(int argc, char* argv[]) {
     }
 
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
-    std::thread tcThr(timeCounter, sleepTime, showInterval);
+
+    struct timespec tcSleepTime = {0};
+    tcSleepTime.tv_nsec = 1000000; //1msec
+    std::thread tcThr(timeCounter, tcSleepTime, showInterval);
+
     std::thread stWinThr(statusWindow,
                          aIn, aOut, rbst1,
                          aInRbLength, aOutRbLength, barMaxLength,
                          showBufferHealth);
+
     aIn->start();
     if (aOut) {
         aOut->start();
