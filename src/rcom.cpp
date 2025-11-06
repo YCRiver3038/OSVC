@@ -7,6 +7,8 @@
 #include <iostream>
 #include <thread>
 
+#include "math.h"
+
 #include "network.hpp"
 #include "remocon.h"
 
@@ -269,6 +271,22 @@ int main(int argc, char* argv[]) {
             std::cin >> command;
             try {
                 oVol = std::stod(command.c_str());
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value\n");
+                continue;
+            }
+            tdata.f32 = oVol;
+            tbuf[0] = SET_OUTPUT_VOLUME;
+            memcpy(&(tbuf[1]), tdata.u8, 4);
+            con1.send_data(tbuf, 5);
+            continue;
+        }
+        if (command == "ovd") {
+            printf("Output Volume [dB] > ");
+            std::cin >> command;
+            try {
+                oVol = std::stod(command.c_str());
+                oVol = pow(10, oVol/20.0);
             } catch (const std::invalid_argument& e) {
                 printf("Invalid value\n");
                 continue;
