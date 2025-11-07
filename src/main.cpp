@@ -367,10 +367,14 @@ void showHelp() {
     printf("--tr-smooth                 (Rubberband flag) TransientsSmooth\n");
     printf("--smoothing                 (Rubberband flag) SmoothingOn\n");
     printf("--ch-together               (Rubberband flag) ChannelsTogether\n");
-    printf("--stream                    enable audio streaming\n");
-    printf("--stream-dest-addr          audio streaming destination address\n");
-    printf("--stream-dest-port          audio streaming destination address\n");
+    printf("--tx-stream                 enable audio streaming\n");
+    printf("--tx-stream-dest-addr       audio streaming destination address\n");
+    printf("--tx-stream-dest-port       audio streaming destination address\n");
+    printf("--rx-stream                 enable audio streaming\n");
+    printf("--rx-stream-dest-addr       audio streaming destination address\n");
+    printf("--rx-stream-dest-port       audio streaming destination address\n");
     printf("--no-local-out              disable local output\n");
+    printf("--no-local-in               disable local input\n");
     printf("\n--show-buffer-health             (Debug) show buffer health in bar\n");
     printf("--barlength [len: int]           (Debug) bar length\n");
     printf("                                         (intended for using with --show-buffer-length)\n");
@@ -403,6 +407,43 @@ void timeCounter(struct timespec ts, int refreshTiming) {
         tElapsedRf += ts.tv_nsec;
         tElapsedRt += ts.tv_nsec;
     }
+}
+
+void rAudioRxThr(ring_buffer<float>* rbAudioIn,
+                 std::string rAddr, std::string rPort,
+                 bool execute) {
+    if (!execute) {
+        return;
+    }
+    if (!rbAudioIn) {
+        printf("Audio stream input error: No ring-buffer available\n");
+        return;
+    }
+
+    network rAudioReceiver(rAddr, rPort, SOCK_DGRAM);
+    int rAudioFd = 0;
+    constexpr int rxDataLenMax = 2048;
+    ssize_t rDataBytesSize = 0;
+    ssize_t rDataLength = 0;
+    float rxData[rxDataLenMax] = {0};
+
+    if (rAudioReceiver.nw_bind_and_listen() != 0) {
+        printf("Audio stream input error: Network error\n");
+        return;
+    }
+    while (!KeyboardInterrupt.load()) {
+        rDataBytesSize = rAudioReceiver.recv_data((uint8_t*)rxData, rxDataLenMax*sizeof(float));
+        if (rDataBytesSize <= 0) {
+            if (rDataBytesSize != EM_CONNECTION_TIMEDOUT) {
+                break;
+            }
+        }
+        rDataLength = rDataBytesSize / sizeof(float);
+        if ((rbAudioIn->get_buf_length() - rbAudioIn->get_stored_length()) >= rDataLength) {
+            rbAudioIn->put_data_memcpy(rxData, rDataLength);
+        }
+    }
+    rAudioReceiver.nw_close();
 }
 
 void statusWindow(AudioManipulator* const aIn, AudioManipulator* const aOut,
@@ -477,9 +518,12 @@ int main(int argc, char* argv[]) {
         {"init-formant", required_argument, 0, 3002},
         {"bind-addr", required_argument, 0, 4001},
         {"bind-port", required_argument, 0, 4002},
-        {"stream", no_argument, 0, 5001},
-        {"stream-dest-addr", required_argument, 0, 5002},
-        {"stream-dest-port", required_argument, 0, 5003},
+        {"tx-stream", no_argument, 0, 5001},
+        {"tx-stream-dest-addr", required_argument, 0, 5002},
+        {"tx-stream-dest-port", required_argument, 0, 5003},
+        {"rx-stream", no_argument, 0, 5004},
+        {"rx-stream-bind-addr", required_argument, 0, 5005},
+        {"rx-stream-bind-port", required_argument, 0, 5006},
         {"mono", no_argument, 0, 9001},
         {"tr-mix", no_argument, 0, 9003},
         {"tr-smooth", no_argument, 0, 9004},
@@ -489,6 +533,7 @@ int main(int argc, char* argv[]) {
         {"thru", no_argument, 0, 10001},
         {"sleep-time", required_argument, 0, 10002},
         {"no-local-out", no_argument, 0, 10003},
+        {"no-local-in", no_argument, 0, 10004},
         {0, 0, 0, 0}
     };
 
@@ -504,7 +549,9 @@ int main(int argc, char* argv[]) {
     bool showBufferHealth = false;
     bool isMonoMode = false;
     bool streamEnabled = false;
+    bool streamRxEnabled = false;
     bool loDisabled = false;
+    bool loInDisabled = false;
     int getoptStatus = 0;
     int optionIndex = 0;
     int iDeviceIndex = 0;
@@ -524,6 +571,8 @@ int main(int argc, char* argv[]) {
     
     std::string stDestAddr("127.0.0.1");
     std::string stDestPort("59959");
+    std::string stBindAddr("127.0.0.1");
+    std::string stBindPort("59960");
 
     double cRbPitchScale = 1.0;
     double cRbFormantScale = 1.0;
@@ -540,10 +589,10 @@ int main(int argc, char* argv[]) {
                 RubberBand::RubberBandStretcher::OptionSmoothingOff     |
                 RubberBand::RubberBandStretcher::OptionWindowStandard;
 
-    rbPitchScale = 1.0;
-    rbFormantScale = 1.0;
-    rbTimeRatio = 1.0;
-    oVolume = 1.0;
+    rbPitchScale.store(1.0);
+    rbFormantScale.store(1.0);
+    rbTimeRatio.store(1.0);
+    oVolume.store(1.0);
     do {
         getoptStatus = getopt_long(argc, argv, "", long_options, &optionIndex);
         switch (getoptStatus) {
@@ -659,6 +708,17 @@ int main(int argc, char* argv[]) {
                 stDestPort.clear();
                 stDestPort.assign(optarg);
                 break;
+            case 5004:
+                streamRxEnabled = true;
+                break;
+            case 5005:
+                stBindAddr.clear();
+                stBindAddr.assign(optarg);
+                break;
+            case 5006:
+                stBindPort.clear();
+                stBindPort.assign(optarg);
+                break;
             case 9001:
                 isMonoMode = true;
                 break;
@@ -691,26 +751,36 @@ int main(int argc, char* argv[]) {
             case 10003: //no-local-out
                 loDisabled = true;
                 break;
+            case 10004: //no-local-in
+                loInDisabled = true;
+                break;
             default:
                 break;
         }
     } while (getoptStatus != -1);
-
-    printf("Input preparation...\n");
+    
+    uint32_t ioChannel = 2;
     bool monoInput = false;
-    AudioManipulator* aIn;
-    aIn = new AudioManipulator(iDeviceIndex, "i",
-                               ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
-    if (!aIn) {
-        printf("Audio input device initialization error.\n");
-        return -1;
-    }
-    if (aIn->getInitStatus() != 0) {
-        printf("Portaudio initialization error: %d\n", aIn->getInitStatus());
-        return -1;
-    }
-    if (aIn->getChannelCount() == 1) {
-        monoInput = true;
+
+    AudioManipulator* aIn = nullptr;
+    ring_buffer<float>* aStreamRxRB = nullptr;
+    if (!loInDisabled) {
+        printf("Input preparation...\n");
+        aIn = new AudioManipulator(iDeviceIndex, "i",
+                                ioFs, ioFormat, 2, ioRBLength, ioChunkLength);
+        if (!aIn) {
+            printf("Audio input device initialization error.\n");
+            return -1;
+        }
+        if (aIn->getInitStatus() != 0) {
+            printf("Portaudio initialization error: %d\n", aIn->getInitStatus());
+            return -1;
+        }
+        if (aIn->getChannelCount() == 1) {
+            monoInput = true;
+        }
+    } else if (streamRxEnabled) {
+        aStreamRxRB = new ring_buffer<float>(ioRBLength*ioChannel);
     }
 
     AudioManipulator* aOut = nullptr;
@@ -730,18 +800,18 @@ int main(int argc, char* argv[]) {
     bool isInit = false;
     bool aInInit = false;
 
-    uint32_t aInRbLength = aIn->getRbChunkLength();
+    uint32_t aInRbLength = ioRBLength;
     uint32_t aInStartThreshold = aInRbLength / 2;
-    uint32_t aOutRbLength = aOut ? (aOut->getRbChunkLength()) : 0;
-    uint32_t aOutStartThreshold = aOut ? (aOutRbLength / 2) : 0;
+    uint32_t aOutRbLength = ioRBLength;
+    uint32_t aOutStartThreshold = aOutRbLength / 2;
 
-    unsigned long nSa = ioChunkLength*(aIn->getChannelCount())*2;
+    unsigned long nSa = ioChunkLength * 2;
     AudioData* tdarr = new AudioData[nSa];
     for (uint32_t ctr1 = 0; ctr1 < nSa; ctr1++) {
         tdarr[ctr1].f32 = 0.0;
     }
 
-    uint32_t ioChannel = aOut ? (aOut->getChannelCount()) : 2;
+    
     float** deinterleaved = new float*[ioChannel];
     float** rbResult = new float*[ioChannel];
     for (uint32_t ctr1 = 0; ctr1 < ioChannel; ctr1++) {
@@ -762,6 +832,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    std::thread rAudioRx(rAudioRxThr, aStreamRxRB, stBindAddr, stBindPort, streamRxEnabled);
     std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
 
     struct timespec tcSleepTime = {0};
@@ -773,7 +844,9 @@ int main(int argc, char* argv[]) {
                          aInRbLength, aOutRbLength, barMaxLength,
                          showBufferHealth);
 
-    aIn->start();
+    if (aIn) {
+        aIn->start();
+    }
     if (aOut) {
         aOut->start();
         aOut->pause();
@@ -789,8 +862,14 @@ int main(int argc, char* argv[]) {
                 printf("Stream: connected\n");
             }
         }
-        aInRbStoredLength.store(aIn->getRbStoredChunkLength());
-        aOutRbStoredLength.store(aOut ? (aOut->getRbStoredChunkLength()) : 0);
+        if (aIn){
+            aInRbStoredLength.store(aIn->getRbStoredChunkLength());
+        } else if (aStreamRxRB) {
+            aInRbStoredLength.store(aStreamRxRB->get_stored_length() / ioChannel);
+        }
+        if (aOut) {
+            aOutRbStoredLength.store(aOut->getRbStoredChunkLength());
+        }
         if (!isInit && aOut) {
             if (aOutRbStoredLength.load() >= aOutStartThreshold) {
                 aOut->resume();
@@ -820,15 +899,21 @@ int main(int argc, char* argv[]) {
             printToPlace(5, 1, msg, 256);
         }
         if (aInRbStoredLength.load() >= ioChunkLength) {
-            aIn->read(tdarr, ioChunkLength);
+            if (aIn) {
+                aIn->read(tdarr, ioChunkLength);
+            } else if (aStreamRxRB) {
+                memcpy(tdarr, aStreamRxRB->get_data_memcpy(ioChunkLength*ioChannel),
+                       ioChunkLength * ioChannel * sizeof(float));
+            }
             // input peak level detect
             for (uint32_t ctr = 0; ctr < (ioChunkLength*ioChannel); ctr++) {
                 updateMax(tdarr[ctr].f32, &iPeakM);
             }
             iPeak.store(iPeakM);
-            
+
             if (!monoInput) {
-                AudioManipulator::deinterleave(tdarr, (AudioData**)deinterleaved, ioChunkLength);
+                AudioManipulator::deinterleave(tdarr, (AudioData**)deinterleaved,
+                                               ioChunkLength, ioChannel);
             }  else {
                 for (uint32_t idx = 0; idx < ioChunkLength; idx++) {
                     deinterleaved[0][idx] = tdarr[idx].f32;
@@ -886,29 +971,34 @@ int main(int argc, char* argv[]) {
     if (KeyboardInterrupt.load()){
         printf("\n\n\nKeyboardInterrupt.\n");
     }
-    aIn->stop();
+    printf("\x1b[0m\x1b[2J\x1b[1;1H\x1b[0K\n");
+
+    if (aIn) {
+        aIn->stop();
+        aIn->terminate();
+        delete aIn;
+    }
     if (aOut) {
         aOut->stop();
-    }
-    printf("\x1b[0m\x1b[2J\x1b[1;1H\x1b[0K\n");
-    aIn->terminate();
-    delete aIn;
-    if (aOut) {
         aOut->terminate();
-    }
-    if (aOut) {
         delete aOut;
     }
-    delete[] tdarr;
+    if (rbst1) { 
+        delete rbst1;
+    }
+    if (aStreamRxRB) {
+        delete aStreamRxRB;
+    }
+    
     for (uint32_t ctr1=0; ctr1<ioChannel; ctr1++) {
         delete[] deinterleaved[ctr1];
         delete[] rbResult[ctr1];
     }
     delete[] deinterleaved;
     delete[] rbResult;
-    if (rbst1) { 
-        delete rbst1;
-    }
+    delete[] tdarr;
+
+    rAudioRx.join();
     rcomt.join();
     tcThr.join();
     stWinThr.join();

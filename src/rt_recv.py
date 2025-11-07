@@ -149,4 +149,4 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         print(f" main: at {datetime.datetime.now().isoformat()}")
         print(" main: KeyboardInterrupt received, exiting.")
-print("\x1b[2J")
+    print("\x1b[2J")
