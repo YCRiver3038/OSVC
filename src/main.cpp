@@ -367,12 +367,12 @@ void showHelp() {
     printf("--tr-smooth                 (Rubberband flag) TransientsSmooth\n");
     printf("--smoothing                 (Rubberband flag) SmoothingOn\n");
     printf("--ch-together               (Rubberband flag) ChannelsTogether\n");
-    printf("--tx-stream                 enable audio streaming\n");
-    printf("--tx-stream-dest-addr       audio streaming destination address\n");
-    printf("--tx-stream-dest-port       audio streaming destination address\n");
-    printf("--rx-stream                 enable audio streaming\n");
-    printf("--rx-stream-dest-addr       audio streaming destination address\n");
-    printf("--rx-stream-dest-port       audio streaming destination address\n");
+    printf("--tx-stream                 enable streaming audio output via network\n");
+    printf("--tx-stream-dest-addr       audio output stream destination address\n");
+    printf("--tx-stream-dest-port       audio output stream destination port\n");
+    printf("--rx-stream                 enable streaming audio input via network\n");
+    printf("--rx-stream-dest-addr       audio streaming input bind address\n");
+    printf("--rx-stream-dest-port       audio streaming input bind port\n");
     printf("--no-local-out              disable local output\n");
     printf("--no-local-in               disable local input\n");
     printf("\n--show-buffer-health             (Debug) show buffer health in bar\n");
