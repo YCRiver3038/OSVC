@@ -136,11 +136,20 @@ network::network(const std::string& con_ip_addr, const std::string& con_port,
     printf("FATAL: network setup failed ( %d: %s )\n", comset_status, gai_strerror(comset_status));
   }
 }
+
+#ifdef __APPLE__
+network::network(): network("127.0.0.1", "62341", PF_INET, SOCK_STREAM){}
+network::network(const std::string& con_ip_addr, const std::string& con_port):
+                 network(con_ip_addr, con_port, PF_UNSPEC, SOCK_STREAM){}
+network::network(const std::string& con_ip_addr, const std::string& con_port, const int con_sock_type):
+                 network(con_ip_addr, con_port, PF_UNSPEC, con_sock_type){}
+#else
 network::network(): network("127.0.0.1", "62341", AF_INET, SOCK_STREAM){}
 network::network(const std::string& con_ip_addr, const std::string& con_port):
                  network(con_ip_addr, con_port, AF_UNSPEC, SOCK_STREAM){}
 network::network(const std::string& con_ip_addr, const std::string& con_port, const int con_sock_type):
                  network(con_ip_addr, con_port, AF_UNSPEC, con_sock_type){}
+#endif
 
 network::~network() {
   if (nw_connected) {
@@ -163,7 +172,11 @@ int network::set_address(const std::string& dest_ip,
     close(socket_fd);
     nw_connected = false;
   }
+#ifdef __APPLE__
+  addr_info_hint.ai_family = PF_UNSPEC;
+#else
   addr_info_hint.ai_family = AF_UNSPEC;
+#endif
   addr_info_hint.ai_socktype = SOCK_STREAM;
   return common_setup(dest_ip, dest_port);
 }

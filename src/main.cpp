@@ -430,7 +430,10 @@ void rAudioRxThr(ring_buffer<float>* rbAudioIn,
     if (rAudioReceiver.nw_bind_and_listen() != 0) {
         printf("Audio stream input error: Network error\n");
         return;
+    } else {
+        printf("Audio input binded on [%s]:%s\n", rAddr.c_str(), rPort.c_str());
     }
+
     while (!KeyboardInterrupt.load()) {
         rDataBytesSize = rAudioReceiver.recv_data((uint8_t*)rxData, rxDataLenMax*sizeof(float));
         if (rDataBytesSize <= 0) {
@@ -811,7 +814,6 @@ int main(int argc, char* argv[]) {
         tdarr[ctr1].f32 = 0.0;
     }
 
-    
     float** deinterleaved = new float*[ioChannel];
     float** rbResult = new float*[ioChannel];
     for (uint32_t ctr1 = 0; ctr1 < ioChannel; ctr1++) {
@@ -824,11 +826,11 @@ int main(int argc, char* argv[]) {
 
     network stNW(stDestAddr, stDestPort, SOCK_DGRAM);
     bool stConnected = false;
-    printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
+    
     if (streamEnabled) {
         if (stNW.nw_connect() == 0) {
             stConnected = true;
-            printf("Stream: connected\n");
+            printf("Audio output: connected to [%s]:%s\n", stDestAddr.c_str(), stDestPort.c_str());
         }
     }
 
@@ -854,12 +856,14 @@ int main(int argc, char* argv[]) {
     if (!isTHRU.load()) {
         rbst1->setMaxProcessSize(ioChunkLength);
     }
+
+    printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     while (!KeyboardInterrupt.load()) {
         nanosleep(&sleepTime, nullptr);
         if (!stConnected && tcRetryReq.load() && streamEnabled) {
             if (stNW.nw_connect() == 0) {
                 stConnected = true;
-                printf("Stream: connected\n");
+                printf("Audio output: connected to [%s]:%s\n", stDestAddr.c_str(), stDestPort.c_str());
             }
         }
         if (aIn){
@@ -869,6 +873,10 @@ int main(int argc, char* argv[]) {
         }
         if (aOut) {
             aOutRbStoredLength.store(aOut->getRbStoredChunkLength());
+            if (aOut->getRbStoredChunkLength() == 0) {
+                aOut->pause();
+                isInit = false;
+            }
         }
         if (!isInit && aOut) {
             if (aOutRbStoredLength.load() >= aOutStartThreshold) {
