@@ -109,9 +109,6 @@ int network::get_connection_addr(char* addrDest, int addrDestLen, char* portDest
 int network::common_setup(const std::string& com_ip,
                           const std::string& com_port) {
   nw_connected = false;
-  addr_info_hint.ai_flags = 0;
-  addr_info_hint.ai_protocol = 0;
-
 #ifdef _GNU_SOURCE
   recv_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
   accept_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP
@@ -130,11 +127,23 @@ network::network(const std::string& con_ip_addr, const std::string& con_port,
   int comset_status = 0;
   addr_info_hint.ai_family = con_family;
   addr_info_hint.ai_socktype = con_sock_type;
+  addr_info_hint.ai_flags = 0;
+  if (con_sock_type == SOCK_DGRAM) {
+    addr_info_hint.ai_protocol = 0 | IPPROTO_UDP;
+  } else if (con_sock_type == SOCK_STREAM) {
+    addr_info_hint.ai_protocol = 0 | IPPROTO_TCP;
+  } else {
+    addr_info_hint.ai_protocol = 0;
+  }
   socket_type = con_sock_type;
   comset_status = common_setup(con_ip_addr, con_port);
   if (comset_status != 0) {
     printf("FATAL: network setup failed ( %d: %s )\n", comset_status, gai_strerror(comset_status));
   }
+  ip_addr.clear();
+  ip_addr.assign(con_ip_addr);
+  port_info.clear();
+  port_info.assign(con_port);
 }
 
 #ifdef __APPLE__
@@ -327,7 +336,8 @@ int network::nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len){
 int network::nw_bind_and_listen(bool is_blocking){
   int errno_ret = 0;
   int bind_status = 0;
-
+  addr_info_hint.ai_flags = addr_info_hint.ai_flags | AI_PASSIVE;
+  common_setup(ip_addr, port_info);
   if (nw_connected) {
     return 0;
   }

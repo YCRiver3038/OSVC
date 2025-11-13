@@ -51,6 +51,8 @@ class network {
     ssize_t recvfrom_ovl(int fd, uint32_t* buffer, size_t count, int flags, struct sockaddr* addr, socklen_t* addr_len);
     bool nw_connected = false;
     bool blocking_io = false;
+    std::string ip_addr;
+    std::string port_info;
 
   protected:
     struct pollfd recv_pollfd;
