@@ -133,6 +133,15 @@ int network::common_setup(const std::string& com_ip,
 /* public method */
 network::network(const std::string& con_ip_addr, const std::string& con_port,
                  const int con_family, const int con_sock_type) {
+#if defined(_WIN32) || defined(_WIN64)
+  wVersionRequested = MAKEWORD(2, 2);
+  wInitStatus = WSAStartup(wVersionRequested, &wsaData);
+  if (wInitStatus != 0) {
+    printf("WSASetup error: %d\n", wInitStatus);
+    return;
+  }
+#endif
+
   int comset_status = 0;
 
   ip_addr.clear();
@@ -154,7 +163,6 @@ network::network(const std::string& con_ip_addr, const std::string& con_port,
   if (comset_status != 0) {
     printf("FATAL: network setup failed ( %d: %s )\n", comset_status, gai_strerror(comset_status));
   }
-
 }
 
 #ifdef __APPLE__
@@ -178,6 +186,11 @@ network::~network() {
   }
   con_sock_addr = nullptr;
   freeaddrinfo(dest_info);  
+#if defined(_WIN32) || defined(_WIN64)
+  if (wInitStatus == 0) {
+    WSACleanup();
+  }
+#endif
 }
 
 /*
