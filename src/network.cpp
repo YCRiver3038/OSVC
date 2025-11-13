@@ -108,7 +108,16 @@ int network::get_connection_addr(char* addrDest, int addrDestLen, char* portDest
 
 int network::common_setup(const std::string& com_ip,
                           const std::string& com_port) {
-  nw_connected = false;
+  if (nw_connected) {
+    close(socket_fd);
+    nw_connected = false;
+  }
+  if (con_sock_addr) {
+    con_sock_addr = nullptr;
+  }
+  if (dest_info) {
+    freeaddrinfo(dest_info);
+  }
 #ifdef _GNU_SOURCE
   recv_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
   accept_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP
@@ -125,6 +134,11 @@ int network::common_setup(const std::string& com_ip,
 network::network(const std::string& con_ip_addr, const std::string& con_port,
                  const int con_family, const int con_sock_type) {
   int comset_status = 0;
+
+  ip_addr.clear();
+  ip_addr.assign(con_ip_addr);
+  port_info.clear();
+  port_info.assign(con_port);
   addr_info_hint.ai_family = con_family;
   addr_info_hint.ai_socktype = con_sock_type;
   addr_info_hint.ai_flags = 0;
@@ -136,14 +150,11 @@ network::network(const std::string& con_ip_addr, const std::string& con_port,
     addr_info_hint.ai_protocol = 0;
   }
   socket_type = con_sock_type;
-  comset_status = common_setup(con_ip_addr, con_port);
+  comset_status = common_setup(ip_addr, port_info);
   if (comset_status != 0) {
     printf("FATAL: network setup failed ( %d: %s )\n", comset_status, gai_strerror(comset_status));
   }
-  ip_addr.clear();
-  ip_addr.assign(con_ip_addr);
-  port_info.clear();
-  port_info.assign(con_port);
+
 }
 
 #ifdef __APPLE__
