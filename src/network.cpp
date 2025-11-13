@@ -355,7 +355,7 @@ int network::nw_bind_and_listen(bool is_blocking){
       bind_status = bind(socket_fd, di_ref->ai_addr, di_ref->ai_addrlen);
       errno_ret = errno;
       if (bind_status != 0) {
-        return errno_ret; 
+        continue; 
       } else {
         if (socket_type == SOCK_STREAM) {
           int listen_status = 0;

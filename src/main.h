@@ -17,14 +17,14 @@
 #include "time.h"
 #include "signal.h"
 
-#if defined(_WIN32) || defined(_WIN64)
-#else
-#include <sys/mman.h>
-#endif
-
 #include "rubberband/RubberBandStretcher.h"
 
 #include "AudioManipulator.hpp"
+
+#if defined(_WIN32) || defined(_WIN64)
+#else
+#include "memMappedFile.h"
+#endif
 
 // Global Variables
 std::atomic<double> rbPitchScale;
