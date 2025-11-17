@@ -288,6 +288,7 @@ int network::nw_connect(bool is_blocking) {
           connection_status = connect(socket_fd, di_ref->ai_addr, di_ref->ai_addrlen);
           errno_ret = errno;
           if (connection_status == 0) {
+            nw_connected = true;
             break;
           }
       }
@@ -311,42 +312,42 @@ int network::nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len){
   socklen_t cf_length = sizeof(connected_from);
 
 #ifdef _GNU_SOURCE
-    constexpr short ac_hup_mask = 0|POLLRDHUP|POLLHUP;
+  constexpr short ac_hup_mask = 0|POLLRDHUP|POLLHUP;
 #else
-    constexpr short ac_hup_mask = 0|POLLHUP;
+  constexpr short ac_hup_mask = 0|POLLHUP;
 #endif
-    if (!nw_connected) {
-      return 0;
+  if (!nw_connected) {
+    return 0;
+  }
+  if (nw_connected) {
+    poll_res = poll(&accept_pollfd, 1, EM_TIMEOUT_LENGTH);
+    poll_errno = (ssize_t)errno;
+    if (poll_res == -1) {
+      return (ssize_t)(poll_errno * -1);
     }
-    if (nw_connected) {
-      poll_res = poll(&accept_pollfd, 1, EM_TIMEOUT_LENGTH);
-      poll_errno = (ssize_t)errno;
-      if (poll_res == -1) {
-        return (ssize_t)(poll_errno * -1);
-      }
-      if (poll_res == 0) {
-        return (ssize_t)EM_CONNECTION_TIMEDOUT;
-      }
-      if (accept_pollfd.revents & ac_hup_mask) {
-        return (ssize_t)EM_CONNECTION_CLOSED;
-      }
-      if (accept_pollfd.revents & (0|POLLERR|POLLNVAL)) {
-        return (ssize_t)EM_ERR;
-      }
+    if (poll_res == 0) {
+      return (ssize_t)EM_CONNECTION_TIMEDOUT;
+    }
+    if (accept_pollfd.revents & ac_hup_mask) {
+      return (ssize_t)EM_CONNECTION_CLOSED;
+    }
+    if (accept_pollfd.revents & (0|POLLERR|POLLNVAL)) {
+      return (ssize_t)EM_ERR;
+    }
 #ifdef _GNU_SOURCE
-      int ac_flag = 0;
-      if (!blocking_io) {
-        ac_flag = 0|SOCK_NONBLOCK|SOCK_CLOEXEC;
-      }
-      accepted_fd = accept4(socket_fd, peer_addr, peer_addr_len, ac_flag);
-#else      
-      accepted_fd = accept(socket_fd, peer_addr, peer_addr_len);
-#endif
-      accept_errno = errno;      
-      if (accepted_fd > 0) {
-        return accepted_fd;
-      }
+    int ac_flag = 0;
+    if (!blocking_io) {
+      ac_flag = 0|SOCK_NONBLOCK|SOCK_CLOEXEC;
     }
+    accepted_fd = accept4(socket_fd, peer_addr, peer_addr_len, ac_flag);
+#else      
+    accepted_fd = accept(socket_fd, peer_addr, peer_addr_len);
+#endif
+    accept_errno = errno;      
+    if (accepted_fd > 0) {
+      return accepted_fd;
+    }
+  }
   return -1 * accept_errno;
 }
 /*
@@ -378,9 +379,7 @@ int network::nw_bind_and_listen(bool is_blocking){
     if (socket_fd != -1) {
       bind_status = bind(socket_fd, di_ref->ai_addr, di_ref->ai_addrlen);
       errno_ret = errno;
-      if (bind_status != 0) {
-        continue; 
-      } else {
+      if (bind_status == 0) {
         if (socket_type == SOCK_STREAM) {
           int listen_status = 0;
           listen_status = listen(socket_fd, 8);
@@ -392,10 +391,10 @@ int network::nw_bind_and_listen(bool is_blocking){
         nw_connected = true;
         if (!is_blocking) {
 #if defined(_WIN32) || defined(_WIN64)
-        u_long ioctlret = 1;
-        ioctlsocket(socket_fd, FIONBIO, &ioctlret);
+          u_long ioctlret = 1;
+          ioctlsocket(socket_fd, FIONBIO, &ioctlret);
 #else
-        fcntl(socket_fd, F_SETFL, O_NONBLOCK);
+          fcntl(socket_fd, F_SETFL, O_NONBLOCK);
 #endif
         }
         recv_pollfd.fd = socket_fd;

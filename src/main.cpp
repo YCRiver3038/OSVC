@@ -260,7 +260,7 @@ void rcom(std::string addr, std::string port) {
                 rdstatus = rc->recv_data(rbuf, 16384);
                 if (rdstatus <= 0) {
                     if (rdstatus != EM_CONNECTION_TIMEDOUT) {
-                        //printf("Status: %zd\x1b[0K\n", rdstatus);
+                        printf("Status: %zd\x1b[0K\n", rdstatus);
                         break;
                     }
                 } else {

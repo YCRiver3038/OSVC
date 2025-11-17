@@ -30,7 +30,7 @@ void rcvthr(network& rc) {
                 rc.errno_to_string(rcStatus, statstr);
                 printf("\nrecv status: %s ( %zd )\n", statstr.c_str(), rcStatus);
                 rc.nw_close();
-                KeyboardInterrupt.load();
+                KeyboardInterrupt.store(true);
                 break;
             }
             continue;
