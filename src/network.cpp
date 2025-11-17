@@ -288,6 +288,8 @@ int network::nw_connect(bool is_blocking) {
           connection_status = connect(socket_fd, di_ref->ai_addr, di_ref->ai_addrlen);
           errno_ret = errno;
           if (connection_status == 0) {
+            recv_pollfd.fd = socket_fd;
+            send_pollfd.fd = socket_fd;
             nw_connected = true;
             break;
           }

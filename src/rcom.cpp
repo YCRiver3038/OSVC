@@ -179,7 +179,7 @@ int main(int argc, char* argv[]) {
     char destPort[16] = {};
     int getAddrStatus = 0;
     int conStatus = 0;
-    conStatus = con1.nw_connect();
+    conStatus = con1.nw_connect(true);
     getAddrStatus = con1.get_connection_addr(destAddr, 1024, destPort, 16);
 
     printf("Address: %s, port: %s\n", destAddr, destPort);
