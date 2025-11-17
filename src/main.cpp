@@ -115,9 +115,113 @@ void tokenize(std::string& coms, std::vector<std::string>& tokenized) {
     return;
 }
 
-void comthr() {
+
+void comthr(bool execute=false) {
+    if (!execute) {
+        return;
+    }
+    static double oVol = 0.0;
+    std::string command;
+    bool trPitchFollow = false;
     while (!KeyboardInterrupt.load()) {
-        
+        std::cin >> command;
+        if (std::cin.eof()) {
+            printf("\nEOF\n");
+            break;
+        }
+        for (size_t ctrc=0; ctrc<command.length(); ctrc++) {
+            command.at(ctrc) = std::tolower(command.at(ctrc));
+        }
+        if (command == "q") {
+            KeyboardInterrupt.store(true);
+            continue;
+        }
+        if (command == "p") {
+            printf("Pitch scale > ");
+            std::cin >> command;
+            try {
+                rbPitchScale.store(std::stod(command.c_str()));
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value\n");
+                continue;
+            }
+            continue;
+        }
+        if (command == "f") {
+            printf("Formant scale > ");
+            std::cin >> command;
+            try {
+                rbFormantScale.store(std::stod(command.c_str()));
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value\n");
+                continue;
+            }
+            continue;
+        }
+        if (command == "t") {
+            printf("Time ratio > ");
+            std::cin >> command;
+            try {
+                rbTimeRatio.store((std::stod(command.c_str()) > 0.0) ? std::stod(command.c_str()) : 1.0);
+                if (trPitchFollow) {
+                    rbPitchScale.store(1.0/rbTimeRatio.load());
+                }
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value\n");
+                continue;
+            }
+            continue;
+        }
+        if (command == "ov") {
+            printf("Output Volume > ");
+            std::cin >> command;
+            try {
+                oVolume.store(std::stod(command.c_str()));
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value\n");
+                continue;
+            }
+            continue;
+        }
+        if (command == "ovd") {
+            printf("Output Volume [dB] > ");
+            std::cin >> command;
+            try {
+                oVol = std::stod(command.c_str());
+                oVol = pow(10, oVol/20.0);
+                oVolume.store(oVol);
+            } catch (const std::invalid_argument& e) {
+                printf("Invalid value\n");
+                continue;
+            }
+            continue;
+        }
+        if (command == "tpf") { // pitch follows time scale
+            trPitchFollow = true;
+            continue;
+        }
+        if (command == "tpc") { // pitch won't follow time scale
+            trPitchFollow = false;
+            continue;
+        }
+        if (command == "thru") {
+            isTHRU.store(true);
+            continue;
+        }
+        if (command == "proc") {
+            isTHRU.store(false);
+            continue;
+        }
+        if (command == "r") {
+            continue;
+        }
+        if (command == "rs") {
+            continue;
+        }
+
+        printf("Invalid command: %s\n", command.c_str());
+        printf("     > ");
+        command.clear();
     }
 }
 
@@ -375,6 +479,7 @@ void showHelp() {
     printf("--rx-stream-dest-port       audio streaming input bind port\n");
     printf("--no-local-out              disable local output\n");
     printf("--no-local-in               disable local input\n");
+    printf("--enable-prompt             enable local management\n");
     printf("\n--show-buffer-health             (Debug) show buffer health in bar\n");
     printf("--barlength [len: int]           (Debug) bar length\n");
     printf("                                         (intended for using with --show-buffer-length)\n");
@@ -537,6 +642,7 @@ int main(int argc, char* argv[]) {
         {"sleep-time", required_argument, 0, 10002},
         {"no-local-out", no_argument, 0, 10003},
         {"no-local-in", no_argument, 0, 10004},
+        {"enable-prompt", no_argument, 0, 10005},
         {0, 0, 0, 0}
     };
 
@@ -555,6 +661,7 @@ int main(int argc, char* argv[]) {
     bool streamRxEnabled = false;
     bool loDisabled = false;
     bool loInDisabled = false;
+    bool loComEnabled = false;
     int getoptStatus = 0;
     int optionIndex = 0;
     int iDeviceIndex = 0;
@@ -757,6 +864,9 @@ int main(int argc, char* argv[]) {
             case 10004: //no-local-in
                 loInDisabled = true;
                 break;
+            case 10005:
+                loComEnabled = true;
+                break;
             default:
                 break;
         }
@@ -845,6 +955,8 @@ int main(int argc, char* argv[]) {
                          aIn, aOut, rbst1,
                          aInRbLength, aOutRbLength, barMaxLength,
                          showBufferHealth);
+
+    std::thread lcomt(comthr, loComEnabled);
 
     if (aIn) {
         aIn->start();
@@ -1006,9 +1118,13 @@ int main(int argc, char* argv[]) {
     delete[] rbResult;
     delete[] tdarr;
 
+    if (loComEnabled) {
+        printf("Input some text when program doesn't terminates.\n");
+    }
     rAudioRx.join();
     rcomt.join();
     tcThr.join();
     stWinThr.join();
+    lcomt.join();
     return 0;
 }
