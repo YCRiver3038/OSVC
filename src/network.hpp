@@ -53,10 +53,10 @@
 
 constexpr uint32_t EM_TIMEOUT_LENGTH = 100; // default: 100[msec]
 constexpr uint32_t EM_RECVBUF_LENGTH_DEFAULT = 32767;
-constexpr int32_t EM_CONNECTION_CLOSED  = -250;
-constexpr int32_t EM_CONNECTION_TIMEDOUT = -240;
-constexpr int32_t EM_ERR = -256;
-constexpr int32_t EM_SEND_AVAILABLE = 0;
+constexpr int EM_CONNECTION_CLOSED  = -250;
+constexpr int EM_CONNECTION_TIMEDOUT = -240;
+constexpr int EM_ERR = -256;
+constexpr int EM_SEND_AVAILABLE = 0;
 
 extern volatile bool network_force_return_req;
 
@@ -137,7 +137,7 @@ template<typename SDTYPE> ssize_t network::send_data_common(SDTYPE* data_arr, co
       if (send_head_index >= sb_size) {
         break;
       }
-      if (send_pollfd.revents & (0|POLLWRNORM)) {
+      if (send_pollfd.revents & (0|POLLOUT)) {
         sent_length = sendto(socket_fd, &(ptr_cast[send_head_index]), send_remain, 0, dest_addr, dest_addr_len);
         send_errno = errno;
         if (sent_length >= 0) {
@@ -236,7 +236,7 @@ template <typename DTYPE> ssize_t network::recv_data(DTYPE* data_dest, ssize_t n
       return (ssize_t)EM_ERR;
     }
 
-    if (recv_pollfd.revents & 0|POLLRDNORM) {
+    if (recv_pollfd.revents & 0|POLLIN) {
       recv_length = recvfrom_ovl(socket_fd, data_dest, n_elm, 0, src_addr_dest, src_addr_len_dest);
       return recv_length;
     }

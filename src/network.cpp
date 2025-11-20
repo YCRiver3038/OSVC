@@ -119,14 +119,14 @@ int network::common_setup(const std::string& com_ip,
     freeaddrinfo(dest_info);
   }
 #ifdef _GNU_SOURCE
-  recv_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
-  accept_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP
+  recv_pollfd.events = POLLIN | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLIN | POLLRDHUP | POLLHUP
                        | POLLERR | POLLNVAL;
 #else
-  recv_pollfd.events = POLLRDNORM | POLLHUP | POLLERR | POLLNVAL;
-  accept_pollfd.events = POLLRDNORM | POLLHUP | POLLERR | POLLNVAL;
+  recv_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
 #endif
-  send_pollfd.events = POLLWRNORM | POLLHUP | POLLERR | POLLNVAL;
+  send_pollfd.events = POLLOUT | POLLHUP | POLLERR | POLLNVAL;
   return getaddrinfo(com_ip.c_str(), com_port.c_str(), &addr_info_hint, &dest_info);
 }
 
@@ -185,7 +185,9 @@ network::~network() {
     nw_connected = false;
   }
   con_sock_addr = nullptr;
-  freeaddrinfo(dest_info);  
+  if (dest_info) {
+    freeaddrinfo(dest_info);
+  }
 #if defined(_WIN32) || defined(_WIN64)
   if (wInitStatus == 0) {
     WSACleanup();
@@ -323,18 +325,18 @@ int network::nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len){
   }
   if (nw_connected) {
     poll_res = poll(&accept_pollfd, 1, EM_TIMEOUT_LENGTH);
-    poll_errno = (ssize_t)errno;
+    poll_errno = (int)errno;
     if (poll_res == -1) {
-      return (ssize_t)(poll_errno * -1);
+      return (int)(poll_errno * -1);
     }
     if (poll_res == 0) {
-      return (ssize_t)EM_CONNECTION_TIMEDOUT;
+      return (int)EM_CONNECTION_TIMEDOUT;
     }
     if (accept_pollfd.revents & ac_hup_mask) {
-      return (ssize_t)EM_CONNECTION_CLOSED;
+      return (int)EM_CONNECTION_CLOSED;
     }
     if (accept_pollfd.revents & (0|POLLERR|POLLNVAL)) {
-      return (ssize_t)EM_ERR;
+      return (int)EM_ERR;
     }
 #ifdef _GNU_SOURCE
     int ac_flag = 0;
@@ -537,12 +539,12 @@ fd_network::fd_network(int init_fd){
   addr_info_hint.ai_protocol = 0;
 
 #ifdef _GNU_SOURCE
-  recv_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
-  accept_pollfd.events = POLLRDNORM | POLLRDHUP | POLLHUP
+  recv_pollfd.events = POLLIN | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLIN | POLLRDHUP | POLLHUP
                        | POLLERR | POLLNVAL;
 #else
-  recv_pollfd.events = POLLRDNORM | POLLHUP | POLLERR | POLLNVAL;
-  accept_pollfd.events = POLLRDNORM | POLLHUP | POLLERR | POLLNVAL;
+  recv_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
 #endif
-  send_pollfd.events = POLLWRNORM | POLLHUP | POLLERR | POLLNVAL;
+  send_pollfd.events = POLLOUT | POLLHUP | POLLERR | POLLNVAL;
 }
