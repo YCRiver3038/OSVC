@@ -693,6 +693,7 @@ int main(int argc, char* argv[]) {
 
     RubberBand::RubberBandStretcher::Options rbOptions;
     rbOptions = RubberBand::RubberBandStretcher::OptionProcessRealTime  |
+                RubberBand::RubberBandStretcher::OptionPitchHighQuality |
                 RubberBand::RubberBandStretcher::OptionFormantPreserved |
                 RubberBand::RubberBandStretcher::OptionEngineFiner      |
                 RubberBand::RubberBandStretcher::OptionTransientsCrisp  |
