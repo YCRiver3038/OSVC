@@ -227,7 +227,7 @@ void comthr(bool execute=false) {
 
 void rcom(std::string addr, std::string port) {
     network rcsrv(addr, port);
-    fd_network* rc = nullptr;
+    network* rc = nullptr;
     uint8_t rbuf[16384] = {};
     uint8_t sbuf[16384] = {};
     trdtype rdata;
@@ -249,7 +249,7 @@ void rcom(std::string addr, std::string port) {
     while (!KeyboardInterrupt.load()) {
         acfd = rcsrv.nw_accept();
         if (acfd > 0) {
-            rc = new fd_network(acfd);
+            rc = new network(acfd);
             printToPlace(5, 1, " ", 2);
             printf("\rClient %d accepted\x1b[0K\n", acfd);
             sbuf[0] = SRV_MSG;
@@ -527,7 +527,7 @@ void rAudioRxThr(ring_buffer<float>* rbAudioIn,
 
     network rAudioReceiver(rAddr, rPort, SOCK_DGRAM);
     int rAudioFd = 0;
-    constexpr int rxDataLenMax = 2048;
+    constexpr int rxDataLenMax = 16384;
     ssize_t rDataBytesSize = 0;
     ssize_t rDataLength = 0;
     float rxData[rxDataLenMax] = {0};
@@ -595,8 +595,8 @@ void statusWindow(AudioManipulator* const aIn, AudioManipulator* const aOut,
             }
             printRatBar(aInRbStoredLength.load(), aInRbLength, barMaxLength, true, '*', ' ', true, true);
             printf("| E(%d), O(%d) | %05lu\x1b[0K\n   ORB|", aIn ? (aIn->getReadEmptyCount()) : 0,
-                                                            aIn ? (aIn->getWriteFullCount()) : 0,
-                                                            aIn ? (aIn->getRxCbFrameCount()) : 0);
+                                                             aIn ? (aIn->getWriteFullCount()) : 0,
+                                                             aIn ? (aIn->getRxCbFrameCount()) : 0);
             printRatBar(aOutRbStoredLength.load(), aOutRbLength, barMaxLength, true, '*', ' ', true);
             printf("| E(%d), O(%d) | %05lu\x1b[0K", aOut ? (aOut->getReadEmptyCount()) : 0,
                                                     aOut ? (aOut->getWriteFullCount()) : 0,

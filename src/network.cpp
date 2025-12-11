@@ -7,11 +7,21 @@ volatile bool network_force_return_req = false;
 ssize_t network::recvfrom_ovl(int fd,
                               uint8_t* buffer, size_t count, int flags,
                               struct sockaddr* addr, socklen_t* addr_len) {
+  ssize_t rf_retnum = 0;
+  int rf_errno = 0;
 #if defined(_WIN32) || defined(_WIN64)
-    return recvfrom(fd, (char*)buffer, count, flags, addr, addr_len);
+  rf_retnum = recvfrom(fd, (char*)buffer, count, flags, addr, addr_len);
 #else
-    return recvfrom(fd, buffer, count, flags, addr, addr_len);
+  rf_retnum = recvfrom(fd, buffer, count, flags, addr, addr_len);
 #endif
+  rf_errno = errno;
+  if (rf_retnum < 0) {
+    return -1*rf_errno;
+  }
+  if (rf_retnum == 0) {
+    return 0;
+  }
+  return rf_retnum;
 }
 ssize_t network::recvfrom_ovl(int fd,
                               uint16_t* buffer, size_t count, int flags,
@@ -43,6 +53,35 @@ ssize_t network::recvfrom_ovl(int fd,
 }
 ssize_t network::recvfrom_ovl(int fd,
                               uint32_t* buffer, size_t count, int flags,
+                              struct sockaddr* addr, socklen_t* addr_len) {
+  size_t temp_counter = 0;
+  ssize_t rf_retnum = 0;
+  int rf_errno = 0;
+
+#if defined(_WIN32) || defined(_WIN64)
+  rf_retnum = recvfrom(fd, (char*)buffer, count*sizeof(uint32_t),
+                       flags, addr, addr_len);
+#else
+  rf_retnum = recvfrom(fd, buffer, count*sizeof(uint32_t),
+                       flags, addr, addr_len);
+#endif
+
+  rf_errno = errno;
+  if (rf_retnum < 0) {
+    return -1*rf_errno;
+  }
+  if (rf_retnum == 0) {
+    return 0;
+  }
+  while (temp_counter < count && (!network_force_return_req)) {
+    buffer[temp_counter] = ntohl(buffer[temp_counter]);
+    temp_counter++;
+  }
+  return rf_retnum;
+}
+
+ssize_t network::recvfrom_ovl(int fd,
+                              float* buffer, size_t count, int flags,
                               struct sockaddr* addr, socklen_t* addr_len) {
   size_t temp_counter = 0;
   ssize_t rf_retnum = 0;
@@ -178,6 +217,21 @@ network::network(const std::string& con_ip_addr, const std::string& con_port):
 network::network(const std::string& con_ip_addr, const std::string& con_port, const int con_sock_type):
                  network(con_ip_addr, con_port, AF_UNSPEC, con_sock_type){}
 #endif
+network::network(int init_fd) {
+  socket_fd = init_fd;
+  recv_pollfd.fd = init_fd;
+  send_pollfd.fd = init_fd;
+  nw_connected = true;
+#ifdef _GNU_SOURCE
+  recv_pollfd.events = POLLIN | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLIN | POLLRDHUP | POLLHUP
+                       | POLLERR | POLLNVAL;
+#else
+  recv_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+#endif
+  send_pollfd.events = POLLOUT | POLLHUP | POLLERR | POLLNVAL;
+}
 
 network::~network() {
   if (nw_connected) {
@@ -367,6 +421,7 @@ int network::nw_bind_and_listen(bool is_blocking){
   int bind_status = 0;
   addr_info_hint.ai_flags = addr_info_hint.ai_flags | AI_PASSIVE;
   common_setup(ip_addr, port_info);
+  //getaddrinfo(ip_addr.c_str(), port_info.c_str(), &addr_info_hint, &dest_info);
   if (nw_connected) {
     return 0;
   }
@@ -517,6 +572,25 @@ ssize_t network::send_data(uint32_t* data_arr, const size_t sb_size, const struc
   return send_data_common(data_arr, sb_size, dest_addr, dest_addr_len);
 }
 
+ssize_t network::send_data(float* data_arr, const size_t sb_size, const struct sockaddr* dest_addr, const socklen_t dest_addr_len) {
+  if (data_arr == nullptr) {
+    return (ssize_t)EM_ERR;
+  }
+  if (!nw_connected && (socket_type == SOCK_STREAM)) {
+    return 0;
+  }
+  size_t temp_counter = 0;
+
+  while(temp_counter < sb_size){
+    if (network_force_return_req) {
+      break;
+    }
+    data_arr[temp_counter] = htonl(data_arr[temp_counter]);
+    temp_counter++;
+  }
+  return send_data_common(data_arr, sb_size, dest_addr, dest_addr_len);
+}
+
 void network::nw_close(){
   if (socket_type == SOCK_STREAM) {
 #if defined(_WIN32) || defined(_WIN64)
@@ -529,7 +603,7 @@ void network::nw_close(){
   nw_connected = false;
 }
 
-fd_network::fd_network(int init_fd){
+fd_network::fd_network(int init_fd) {
   socket_fd = init_fd;
   recv_pollfd.fd = init_fd;
   send_pollfd.fd = init_fd;

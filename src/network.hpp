@@ -77,6 +77,7 @@ class network {
     ssize_t recvfrom_ovl(int fd, uint8_t* buffer, size_t count, int flags, struct sockaddr* addr, socklen_t* addr_len);
     ssize_t recvfrom_ovl(int fd, uint16_t* buffer, size_t count, int flags, struct sockaddr* addr, socklen_t* addr_len);
     ssize_t recvfrom_ovl(int fd, uint32_t* buffer, size_t count, int flags, struct sockaddr* addr, socklen_t* addr_len);
+    ssize_t recvfrom_ovl(int fd, float* buffer, size_t count, int flags, struct sockaddr* addr, socklen_t* addr_len);
     bool nw_connected = false;
     bool blocking_io = false;
     std::string ip_addr;
@@ -89,6 +90,7 @@ class network {
   
   public:
     network();
+    network(int init_fd);
     network(const std::string& con_ip_addr, const std::string& con_port);
     network(const std::string& con_ip_addr, const std::string& con_port, const int con_sock_type);
     network(const std::string& con_ip_addr, const std::string& con_port, const int con_family, const int con_sock_type);
@@ -101,13 +103,17 @@ class network {
     template <typename DTYPE> ssize_t recv_data(DTYPE* data_dest, ssize_t n_elm, struct sockaddr* src_addr_dest=nullptr, socklen_t* src_addr_len_dest=nullptr, bool nopoll=false);
 
     template<typename SDTYPE> ssize_t send_data_common(SDTYPE* data_arr, const size_t sb_size, const struct sockaddr* dest_addr=nullptr, const socklen_t dest_addr_len=0);
-    ssize_t send_data( uint8_t* data_arr, const size_t sb_size, const struct sockaddr* dest_addr=nullptr, const socklen_t dest_addr_len=0);
+    ssize_t send_data(uint8_t* data_arr, const size_t sb_size, const struct sockaddr* dest_addr=nullptr, const socklen_t dest_addr_len=0);
     ssize_t send_data(uint16_t* data_arr, const size_t sb_size, const struct sockaddr* dest_addr=nullptr, const socklen_t dest_addr_len=0);
     ssize_t send_data(uint32_t* data_arr, const size_t sb_size, const struct sockaddr* dest_addr=nullptr, const socklen_t dest_addr_len=0);
+    ssize_t send_data(float* data_arr, const size_t sb_size, const struct sockaddr* dest_addr=nullptr, const socklen_t dest_addr_len=0);
     int set_address(const std::string& dest_ip, const std::string& dest_port, const int con_family, const int con_sock_type);
     int set_address(const std::string& dest_ip, const std::string& dest_port);
     void errno_to_string(int err_num, std::string& dest);
     int get_connection_addr(char* addrDest, int addrDestLen, char* portDest, int portDestLen);
+    bool is_connected() {
+      return nw_connected;
+    }
 };
 
 template<typename SDTYPE> ssize_t network::send_data_common(SDTYPE* data_arr, const size_t sb_size, const struct sockaddr* dest_addr, const socklen_t dest_addr_len){
@@ -229,9 +235,9 @@ template <typename DTYPE> ssize_t network::recv_data(DTYPE* data_dest, ssize_t n
     if (poll_res == 0) {
       return (ssize_t)EM_CONNECTION_TIMEDOUT;
     }
-    if (recv_pollfd.revents & rd_hup_mask) {
-      return (ssize_t)EM_CONNECTION_CLOSED;
-    }
+    //if (recv_pollfd.revents & rd_hup_mask) {
+    //  return (ssize_t)EM_CONNECTION_CLOSED;
+    //}
     if (recv_pollfd.revents & (0|POLLERR|POLLNVAL)) {
       return (ssize_t)EM_ERR;
     }
@@ -247,5 +253,9 @@ template <typename DTYPE> ssize_t network::recv_data(DTYPE* data_dest, ssize_t n
 class fd_network : public network {
   public:
     fd_network(int init_fd);
+    bool is_connected() {
+      return nw_connected;
+    }
 };
+
 #endif
