@@ -235,9 +235,9 @@ template <typename DTYPE> ssize_t network::recv_data(DTYPE* data_dest, ssize_t n
     if (poll_res == 0) {
       return (ssize_t)EM_CONNECTION_TIMEDOUT;
     }
-    //if (recv_pollfd.revents & rd_hup_mask) {
-    //  return (ssize_t)EM_CONNECTION_CLOSED;
-    //}
+    if (recv_pollfd.revents & rd_hup_mask) {
+      return (ssize_t)EM_CONNECTION_CLOSED;
+    }
     if (recv_pollfd.revents & (0|POLLERR|POLLNVAL)) {
       return (ssize_t)EM_ERR;
     }
