@@ -180,7 +180,6 @@ network::network(const std::string& con_ip_addr, const std::string& con_port,
     return;
   }
 #endif
-
   int comset_status = 0;
 
   ip_addr.clear();
@@ -221,7 +220,7 @@ network::network(int init_fd) {
   socket_fd = init_fd;
   recv_pollfd.fd = init_fd;
   send_pollfd.fd = init_fd;
-  nw_connected = true;
+  nw_connected = false;
 #ifdef _GNU_SOURCE
   recv_pollfd.events = POLLIN | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
   accept_pollfd.events = POLLIN | POLLRDHUP | POLLHUP
@@ -231,6 +230,62 @@ network::network(int init_fd) {
   accept_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
 #endif
   send_pollfd.events = POLLOUT | POLLHUP | POLLERR | POLLNVAL;
+}
+network::network(int init_fd, struct sockaddr* fd_sock_addr, socklen_t fd_sock_len, bool is_blocking) {
+  socket_fd = init_fd;
+  recv_pollfd.fd = init_fd;
+  send_pollfd.fd = init_fd;
+  con_sock_addr = fd_sock_addr;
+  con_sock_addr_len = fd_sock_len;
+  nw_connected = true;
+  blocking_io = is_blocking;
+#ifdef _GNU_SOURCE
+  recv_pollfd.events = POLLIN | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLIN | POLLRDHUP | POLLHUP
+                       | POLLERR | POLLNVAL;
+#else
+  recv_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+  accept_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
+#endif
+  send_pollfd.events = POLLOUT | POLLHUP | POLLERR | POLLNVAL;
+  //con_retry(blocking_io);
+}
+
+void network::con_retry(bool is_blocking) {
+  int errno_ret = 0;
+  int connection_status = 0;
+  if (!is_blocking) {
+#if defined(_WIN32) || defined(_WIN64)
+    u_long ioctlret = 1;
+    ioctlsocket(socket_fd, FIONBIO, &ioctlret);
+#else
+    fcntl(socket_fd, F_SETFL, O_NONBLOCK);
+#endif
+    do {
+      connection_status = connect(socket_fd, con_sock_addr, con_sock_addr_len);
+      errno_ret = errno;
+      if ((errno_ret == EISCONN) || (connection_status == 0)) {
+        printf("\nfd connected\n");
+        break;
+      }
+    } while ((errno_ret == EINPROGRESS) || (errno_ret == EALREADY)
+              && !network_force_return_req);
+    printf("\nfd errno: %d (%s)\x1b[0K\n", errno_ret, strerror(errno_ret));
+    if ((connection_status != -1) || (errno_ret == EISCONN)) {
+      nw_connected = true;
+      return;
+    }
+  } else {
+    connection_status = connect(socket_fd, con_sock_addr, con_sock_addr_len);
+    errno_ret = errno;
+    printf("\nfd errno: %d (%s)\x1b[0K\n", errno_ret, strerror(errno_ret));
+    if (connection_status == 0) {
+      nw_connected = true;
+      printf("\nfd connected\n");
+      return;
+    }
+  }
+  printf("\nfd not connected\x1b[0K\n");
 }
 
 network::~network() {
@@ -341,73 +396,20 @@ int network::nw_connect(bool is_blocking) {
           return 0;
         }
       } else {
-          connection_status = connect(socket_fd, di_ref->ai_addr, di_ref->ai_addrlen);
-          errno_ret = errno;
-          if (connection_status == 0) {
-            recv_pollfd.fd = socket_fd;
-            send_pollfd.fd = socket_fd;
-            nw_connected = true;
-            break;
-          }
+        connection_status = connect(socket_fd, di_ref->ai_addr, di_ref->ai_addrlen);
+        errno_ret = errno;
+        if (connection_status == 0) {
+          recv_pollfd.fd = socket_fd;
+          send_pollfd.fd = socket_fd;
+          nw_connected = true;
+          break;
+        }
       }
     }
   }
   return -1 * errno_ret;
 }
-/*
-  nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len)
-    alias of accept()
-  return:
-    non-negative value -> new connected socket
-    negative value -> negated errno
-*/
-int network::nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len){
-  int accepted_fd = 0;
-  int accept_errno = 0;
-  int poll_res = 0;
-  int poll_errno = 0;
-  struct sockaddr connected_from;
-  socklen_t cf_length = sizeof(connected_from);
 
-#ifdef _GNU_SOURCE
-  constexpr short ac_hup_mask = 0|POLLRDHUP|POLLHUP;
-#else
-  constexpr short ac_hup_mask = 0|POLLHUP;
-#endif
-  if (!nw_connected) {
-    return 0;
-  }
-  if (nw_connected) {
-    poll_res = poll(&accept_pollfd, 1, EM_TIMEOUT_LENGTH);
-    poll_errno = (int)errno;
-    if (poll_res == -1) {
-      return (int)(poll_errno * -1);
-    }
-    if (poll_res == 0) {
-      return (int)EM_CONNECTION_TIMEDOUT;
-    }
-    if (accept_pollfd.revents & ac_hup_mask) {
-      return (int)EM_CONNECTION_CLOSED;
-    }
-    if (accept_pollfd.revents & (0|POLLERR|POLLNVAL)) {
-      return (int)EM_ERR;
-    }
-#ifdef _GNU_SOURCE
-    int ac_flag = 0;
-    if (!blocking_io) {
-      ac_flag = 0|SOCK_NONBLOCK|SOCK_CLOEXEC;
-    }
-    accepted_fd = accept4(socket_fd, peer_addr, peer_addr_len, ac_flag);
-#else      
-    accepted_fd = accept(socket_fd, peer_addr, peer_addr_len);
-#endif
-    accept_errno = errno;      
-    if (accepted_fd > 0) {
-      return accepted_fd;
-    }
-  }
-  return -1 * accept_errno;
-}
 /*
   nw_bind_and_listen(bool is_blocking)
     used if the application is intended to behave as server.
@@ -464,6 +466,61 @@ int network::nw_bind_and_listen(bool is_blocking){
     }
   }
   return errno_ret;
+}
+
+/*
+  nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len)
+    alias of accept()
+  return:
+    non-negative value -> new connected socket
+    negative value -> negated errno
+*/
+int network::nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len){
+  int accepted_fd = 0;
+  int accept_errno = 0;
+  int poll_res = 0;
+  int poll_errno = 0;
+  struct sockaddr connected_from;
+  socklen_t cf_length = sizeof(connected_from);
+
+#ifdef _GNU_SOURCE
+  constexpr short ac_hup_mask = 0|POLLRDHUP|POLLHUP;
+#else
+  constexpr short ac_hup_mask = 0|POLLHUP;
+#endif
+  if (!nw_connected) {
+    return 0;
+  }
+  if (nw_connected) {
+    poll_res = poll(&accept_pollfd, 1, EM_TIMEOUT_LENGTH);
+    poll_errno = (int)errno;
+    if (poll_res == -1) {
+      return (int)(poll_errno * -1);
+    }
+    if (poll_res == 0) {
+      return (int)EM_CONNECTION_TIMEDOUT;
+    }
+    if (accept_pollfd.revents & ac_hup_mask) {
+      return (int)EM_CONNECTION_CLOSED;
+    }
+    if (accept_pollfd.revents & (0|POLLERR|POLLNVAL)) {
+      return (int)EM_ERR;
+    }
+#ifdef _GNU_SOURCE
+    int ac_flag = 0;
+    if (!blocking_io) {
+      ac_flag = 0|SOCK_NONBLOCK|SOCK_CLOEXEC;
+    }
+    accepted_fd = accept4(socket_fd, peer_addr, peer_addr_len, ac_flag);
+#else      
+    accepted_fd = accept(socket_fd, peer_addr, peer_addr_len);
+#endif
+    accept_errno = errno;      
+    if (accepted_fd > 0) {
+      return accepted_fd;
+    }
+  }
+  return -1 * accept_errno;
 }
 
 /*

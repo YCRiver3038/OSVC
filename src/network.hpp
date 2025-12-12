@@ -49,6 +49,7 @@
 #include "sys/types.h"
 #include "arpa/inet.h"
 #include "netinet/ip.h"
+#include <sys/socket.h>
 #endif
 
 constexpr uint32_t EM_TIMEOUT_LENGTH = 100; // default: 100[msec]
@@ -83,7 +84,6 @@ class network {
     std::string ip_addr;
     std::string port_info;
 
-  protected:
     struct pollfd recv_pollfd;
     struct pollfd send_pollfd;
     int socket_fd;
@@ -91,6 +91,7 @@ class network {
   public:
     network();
     network(int init_fd);
+    network(int init_fd, struct sockaddr* fd_sock_addr, socklen_t fd_sock_len, bool is_blocking=false);
     network(const std::string& con_ip_addr, const std::string& con_port);
     network(const std::string& con_ip_addr, const std::string& con_port, const int con_sock_type);
     network(const std::string& con_ip_addr, const std::string& con_port, const int con_family, const int con_sock_type);
@@ -99,6 +100,7 @@ class network {
     int nw_bind_and_listen(bool is_blocking=false);
     int nw_accept(struct sockaddr* peer_addr=nullptr, socklen_t* peer_addr_len=nullptr);
     void nw_close();
+    void con_retry(bool is_blocking=false);
     //size_t resize_buffer(size_t bsize);
     template <typename DTYPE> ssize_t recv_data(DTYPE* data_dest, ssize_t n_elm, struct sockaddr* src_addr_dest=nullptr, socklen_t* src_addr_len_dest=nullptr, bool nopoll=false);
 
@@ -236,6 +238,7 @@ template <typename DTYPE> ssize_t network::recv_data(DTYPE* data_dest, ssize_t n
       return (ssize_t)EM_CONNECTION_TIMEDOUT;
     }
     if (recv_pollfd.revents & rd_hup_mask) {
+      //nw_connected = false;
       return (ssize_t)EM_CONNECTION_CLOSED;
     }
     if (recv_pollfd.revents & (0|POLLERR|POLLNVAL)) {
