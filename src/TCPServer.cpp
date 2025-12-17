@@ -47,9 +47,14 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
                 aPollFd.fd = sockFd;
                 getnameinfo(diRef->ai_addr, diRef->ai_addrlen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
                 printf("Bound on [%s]:%s, ", hostName, svcName);
-                printf("Proto: %s, Type: %s, Family: %s\n", (diRef->ai_protocol == IPPROTO_TCP) ? "TCP" : "Other"
-                                                          , (diRef->ai_socktype == SOCK_STREAM) ? "STREAM" : "Other"
-                                                          , (diRef->ai_family == PF_INET) ? "IPv4" : "Other" );
+                printf("Proto: %s, Type: %s, Family: %s\n", (diRef->ai_protocol == IPPROTO_TCP) ? "TCP" :
+                                                            (diRef->ai_protocol == IPPROTO_UDP) ? "UDP" :
+                                                            "Other"
+                                                          , (diRef->ai_socktype == SOCK_STREAM) ? "STREAM" :
+                                                            (diRef->ai_socktype == SOCK_DGRAM)  ? "DGRAM" :
+                                                            "Other"
+                                                          , (diRef->ai_family == PF_INET) ? "IPv4" :
+                                                            (diRef->ai_family == PF_INET6) ? "IPv6" : "Other");
                 return;
             }
         }
@@ -103,7 +108,7 @@ int32_t TCPServer::await() {
 #endif
     acceptErrno = errno;
     if (acceptedFd > 0) {
-        //connect(acceptedFd, &peerAddr, peerAddrLen);
+        connect(acceptedFd, &peerAddr, peerAddrLen);
         getnameinfo(&peerAddr, peerAddrLen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
         printf("Accepted [%s]:%s\n", hostName, svcName);
         cList.emplace(cListLength, acceptedFd);
@@ -170,13 +175,17 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                         case EAGAIN:
                             break;
                         default:
-                            //close(stPoll.fd);
                             return (sendErrno * -1);
                     }
                 }
             } else {
                 if (stPoll.revents & (0|POLLHUP)) {
-                    cList.erase(cID);
+                    try {
+                        close(stPoll.fd);
+                        cList.erase(cID);
+                    } catch (std::exception& e) {
+                        printf("Client erased: %s\n", e.what());
+                    }
                     return (ssize_t)TSRV_ERR_CONN_CLOSED;
                 }
                 if (stPoll.revents & (0|POLLERR|POLLNVAL)) {

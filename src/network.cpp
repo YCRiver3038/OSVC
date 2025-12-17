@@ -230,6 +230,8 @@ network::network(int init_fd) {
   accept_pollfd.events = POLLIN | POLLHUP | POLLERR | POLLNVAL;
 #endif
   send_pollfd.events = POLLOUT | POLLHUP | POLLERR | POLLNVAL;
+  //con_retry(false);
+  nw_connected = true;
 }
 network::network(int init_fd, struct sockaddr* fd_sock_addr, socklen_t fd_sock_len, bool is_blocking) {
   socket_fd = init_fd;
@@ -237,7 +239,8 @@ network::network(int init_fd, struct sockaddr* fd_sock_addr, socklen_t fd_sock_l
   send_pollfd.fd = init_fd;
   con_sock_addr = fd_sock_addr;
   con_sock_addr_len = fd_sock_len;
-  nw_connected = true;
+  socket_type = SOCK_STREAM;
+  nw_connected = false;
   blocking_io = is_blocking;
 #ifdef _GNU_SOURCE
   recv_pollfd.events = POLLIN | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL;
@@ -249,6 +252,7 @@ network::network(int init_fd, struct sockaddr* fd_sock_addr, socklen_t fd_sock_l
 #endif
   send_pollfd.events = POLLOUT | POLLHUP | POLLERR | POLLNVAL;
   //con_retry(blocking_io);
+  nw_connected = true;
 }
 
 void network::con_retry(bool is_blocking) {
@@ -311,8 +315,8 @@ network::~network() {
     other -> error(return value of getaddrinfo())
 */
 int network::set_address(const std::string& dest_ip,
-                         const std::string& dest_port){
-  if(nw_connected) {
+                         const std::string& dest_port) {
+  if (nw_connected) {
     close(socket_fd);
     nw_connected = false;
   }
@@ -419,6 +423,8 @@ int network::nw_connect(bool is_blocking) {
     errno -> failed
 */
 int network::nw_bind_and_listen(bool is_blocking){
+  char hostName[256] = {};
+  char svcName[32] = {};
   int errno_ret = 0;
   int bind_status = 0;
   addr_info_hint.ai_flags = addr_info_hint.ai_flags | AI_PASSIVE;
@@ -441,6 +447,11 @@ int network::nw_bind_and_listen(bool is_blocking){
       bind_status = bind(socket_fd, di_ref->ai_addr, di_ref->ai_addrlen);
       errno_ret = errno;
       if (bind_status == 0) {
+        getnameinfo(di_ref->ai_addr, di_ref->ai_addrlen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
+        printf("Bound on [%s]:%s, ", hostName, svcName);
+        printf("Proto: %s, Type: %s, Family: %s\n", (di_ref->ai_protocol == IPPROTO_TCP) ? "TCP" : (di_ref->ai_protocol == IPPROTO_UDP) ? "UDP" : "Other"
+                                                  , (di_ref->ai_socktype == SOCK_STREAM) ? "STREAM" : (di_ref->ai_socktype == SOCK_DGRAM) ? "DGRAM" : "Other"
+                                                  , (di_ref->ai_family == PF_INET) ? "IPv4" : (di_ref->ai_family == PF_INET6) ? "IPv6" : "Other" );
         if (socket_type == SOCK_STREAM) {
           int listen_status = 0;
           listen_status = listen(socket_fd, 8);
@@ -470,7 +481,7 @@ int network::nw_bind_and_listen(bool is_blocking){
 
 /*
   nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len)
-    alias of accept()
+    wrapper of accept()
   return:
     non-negative value -> new connected socket
     negative value -> negated errno
@@ -514,8 +525,11 @@ int network::nw_accept(struct sockaddr* peer_addr, socklen_t* peer_addr_len){
     accepted_fd = accept4(socket_fd, peer_addr, peer_addr_len, ac_flag);
 #else      
     accepted_fd = accept(socket_fd, peer_addr, peer_addr_len);
+    /*if (!blocking_io) {
+      fcntl(accepted_fd, F_SETFL, O_NONBLOCK);
+    }*/
 #endif
-    accept_errno = errno;      
+    accept_errno = errno;
     if (accepted_fd > 0) {
       return accepted_fd;
     }
