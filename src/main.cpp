@@ -244,7 +244,7 @@ void rcom(std::string addr, std::string port) {
     rdata.u32 = 0;
 
     TCPServer rcsrv(addr, port);
-    rdstatus = rcsrv.binded();
+    rdstatus = rcsrv.bound();
 
     printf("\nAddress: %s, port: %s\n", addr.c_str(), port.c_str());
     if (rdstatus == false) {

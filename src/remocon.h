@@ -46,6 +46,8 @@ enum {
     INFO_OUTPUT_DEVICE, // value: Text/json
     REC_START,       // No following value
     REC_STOP,        // No following value
+    REC_PLAYBACK,     // No following value
+    REC_PLAYBACK_STOP,     // No following value
     MODE_THRU,       // No following value
     MODE_PROCESSED,  // No following value
     STREAM_DATA,     // value: float32 array
