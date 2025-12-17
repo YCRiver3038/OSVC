@@ -226,7 +226,10 @@ void comthr(bool execute=false) {
     }
 }
 
-void rcom(std::string addr, std::string port) {
+void rcom(std::string addr, std::string port, bool execute) {
+    if (!execute) {
+        return;
+    }
     uint8_t rbuf[16384] = {};
     uint8_t sbuf[16384] = {};
     trdtype rdata;
@@ -667,6 +670,7 @@ int main(int argc, char* argv[]) {
         {"no-local-out", no_argument, 0, 10003},
         {"no-local-in", no_argument, 0, 10004},
         {"enable-prompt", no_argument, 0, 10005},
+        {"enable-nw", no_argument, 0, 11001},
         {0, 0, 0, 0}
     };
 
@@ -677,7 +681,7 @@ int main(int argc, char* argv[]) {
     sa.sa_handler = kbiHandler;
     sigaction(SIGINT, &sa, nullptr);
 #endif
-
+    bool nwEnabled = false;
     bool listDevices = false;
     bool showBufferHealth = false;
     bool isMonoMode = false;
@@ -892,11 +896,17 @@ int main(int argc, char* argv[]) {
             case 10005:
                 loComEnabled = true;
                 break;
+            case 11001:
+                nwEnabled = true;
             default:
                 break;
         }
     } while (getoptStatus != -1);
-    
+
+    if (!nwEnabled) {
+        loComEnabled = true;
+    }
+
     uint32_t ioChannel = 2;
     bool monoInput = false;
 
@@ -970,7 +980,8 @@ int main(int argc, char* argv[]) {
     }
 
     std::thread rAudioRx(rAudioRxThr, aStreamRxRB, stBindAddr, stBindPort, streamRxEnabled);
-    std::thread rcomt(rcom, rcomBindAddr, rcomBindPort);
+
+    std::thread rcomt(rcom, rcomBindAddr, rcomBindPort, nwEnabled);
 
     struct timespec tcSleepTime = {0};
     tcSleepTime.tv_nsec = 1000000; //1msec

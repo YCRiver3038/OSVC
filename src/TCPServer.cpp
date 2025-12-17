@@ -12,7 +12,18 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
     int bindStatus = 0;
     char hostName[256] = {};
     char svcName[32] = {};
+
+#if defined(_WIN32) || defined(_WIN64)
+    char sockOptValue = 1;
+    wVersionRequested = MAKEWORD(2, 2);
+    wInitStatus = WSAStartup(wVersionRequested, &wsaData);
+    if (wInitStatus != 0) {
+        printf("WSASetup error: %d\n", wInitStatus);
+        return;
+    }
+#else
     int sockOptValue = 1;
+#endif
 
     rPollFd.events = rPollFlag;
     aPollFd.events = aPollFlag;
@@ -31,7 +42,7 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
         if (servTerminate) {
             break;
         }
-        sockFd = socket(diRef->ai_family, diRef->ai_socktype, diRef->ai_protocol);
+        sockFd = socket(diRef->ai_family, diRef->ai_socktype, 0);
         retErrno = errno;
         if (sockFd != -1) {
             setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, &sockOptValue, sizeof(sockOptValue));
@@ -45,7 +56,10 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
                 if (listen_status != 0) {
                     return;
                 }
-                //fcntl(sockFd, F_SETFL, O_NONBLOCK);
+#if defined(_WIN32) || defined(_WIN64)
+#else
+                fcntl(sockFd, F_SETFL, O_NONBLOCK);
+#endif
                 aPollFd.fd = sockFd;
                 getnameinfo(diRef->ai_addr, diRef->ai_addrlen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
                 printf("Bound on [%s]:%s, ", hostName, svcName);
@@ -74,6 +88,11 @@ TCPServer::~TCPServer() {
     if (destInfo) {
         freeaddrinfo(destInfo);
     }
+#if defined(_WIN32) || defined(_WIN64)
+    if (wInitStatus == 0) {
+        WSACleanup();
+    }
+#endif
 }
 
 /*
@@ -111,6 +130,7 @@ int32_t TCPServer::await() {
     acceptErrno = errno;
     if (acceptedFd > 0) {
         connect(acceptedFd, &peerAddr, peerAddrLen);
+        perror("debug");
         getnameinfo(&peerAddr, peerAddrLen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
         printf("Accepted [%s]:%s\n", hostName, svcName);
         cList.emplace(cListLength, acceptedFd);
@@ -167,7 +187,11 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                 break;
             }
             if (stPoll.revents & (0|POLLOUT)) {
-                sentLength = sendto(stPoll.fd, &(sBuffer[sendHeadIndex]), sendRemain, 0, nullptr, 0);
+#if defined(_WIN32) || defined(_WIN64)
+                sentLength = send(stPoll.fd, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
+#else
+                sentLength = send(stPoll.fd, &(sBuffer[sendHeadIndex]), sendRemain, 0);
+#endif
                 sendErrno = errno;
                 if (sentLength > 0) {
                     sendHeadIndex += sentLength;
@@ -175,12 +199,13 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                 } else {
                     switch(sendErrno){
                         case EAGAIN:
-                            break;
+                            continue;
                         default:
                             return (sendErrno * -1);
                     }
                 }
             } else {
+                perror("debug");
                 if (stPoll.revents & (0|POLLHUP)) {
                     try {
                         close(stPoll.fd);
@@ -241,7 +266,11 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
         return (ssize_t)TSRV_ERR_GENERAL;
     }
     if (rfPoll.revents & 0|POLLIN) {
+#if defined(_WIN32) || defined(_WIN64)
+        rfBytesLength = recvfrom(rfPoll.fd, (char*)rBuffer, bufLength, 0, nullptr, 0);
+#else
         rfBytesLength = recvfrom(rfPoll.fd, rBuffer, bufLength, 0, nullptr, 0);
+#endif
         rfErrno = errno;
         if (rfBytesLength < 0) {
             close(rfPoll.fd);
