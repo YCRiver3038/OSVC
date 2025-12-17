@@ -13,6 +13,15 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
     char hostName[256] = {};
     char svcName[32] = {};
 
+#if defined(_WIN32) || defined(_WIN64)
+    wVersionRequested = MAKEWORD(2, 2);
+    wInitStatus = WSAStartup(wVersionRequested, &wsaData);
+    if (wInitStatus != 0) {
+        printf("WSASetup error: %d\n", wInitStatus);
+        return;
+    }
+#endif
+
     rPollFd.events = rPollFlag;
     aPollFd.events = aPollFlag;
     sPollFd.events = sPollFlag;
@@ -72,6 +81,11 @@ TCPServer::~TCPServer() {
     if (destInfo) {
         freeaddrinfo(destInfo);
     }
+#if defined(_WIN32) || defined(_WIN64)
+    if (wInitStatus == 0) {
+        WSACleanup();
+    }
+#endif
 }
 
 /*

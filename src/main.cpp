@@ -661,6 +661,7 @@ int main(int argc, char* argv[]) {
         {"smoothing", no_argument, 0, 9005},
         {"ll", no_argument, 0, 9006},
         {"ch-together", no_argument, 0, 9007},
+        {"qhigh", no_argument, 0, 9008},
         {"thru", no_argument, 0, 10001},
         {"sleep-time", required_argument, 0, 10002},
         {"no-local-out", no_argument, 0, 10003},
