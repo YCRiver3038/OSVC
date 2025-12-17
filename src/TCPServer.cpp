@@ -179,7 +179,11 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                 break;
             }
             if (stPoll.revents & (0|POLLOUT)) {
+#if defined(_WIN32) || defined(_WIN64)
+                sentLength = sendto(stPoll.fd, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0, nullptr, 0);
+#else
                 sentLength = sendto(stPoll.fd, &(sBuffer[sendHeadIndex]), sendRemain, 0, nullptr, 0);
+#endif
                 sendErrno = errno;
                 if (sentLength > 0) {
                     sendHeadIndex += sentLength;
@@ -253,7 +257,11 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
         return (ssize_t)TSRV_ERR_GENERAL;
     }
     if (rfPoll.revents & 0|POLLIN) {
+#if defined(_WIN32) || defined(_WIN64)
+        rfBytesLength = recvfrom(rfPoll.fd, (char*)rBuffer, bufLength, 0, nullptr, 0);
+#else
         rfBytesLength = recvfrom(rfPoll.fd, rBuffer, bufLength, 0, nullptr, 0);
+#endif
         rfErrno = errno;
         if (rfBytesLength < 0) {
             close(rfPoll.fd);
