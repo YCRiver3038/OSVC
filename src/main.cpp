@@ -1,6 +1,7 @@
 #include "main.h"
 //#include "nlohmann/json.hpp"
 #include "network.hpp"
+#include "TCPServer.hpp"
 
 #include "remocon.h"
 
@@ -226,8 +227,6 @@ void comthr(bool execute=false) {
 }
 
 void rcom(std::string addr, std::string port) {
-    network rcsrv(addr, port);
-    network* rc = nullptr;
     uint8_t rbuf[16384] = {};
     uint8_t sbuf[16384] = {};
     trdtype rdata;
@@ -236,31 +235,53 @@ void rcom(std::string addr, std::string port) {
     ssize_t sendStatus = 0;
     bool tr_pitch_follow = false;
     int acfd = 0;
+    struct sockaddr acSockAddr = {};
+    socklen_t acSockLen = sizeof(struct sockaddr);
+    struct timespec conSleepTime = {0};
+    conSleepTime.tv_nsec = 100000000;
 
     tdata.u32 = 0;
     rdata.u32 = 0;
-    rdstatus = rcsrv.nw_bind_and_listen();
+
+    TCPServer rcsrv(addr, port);
+    rdstatus = rcsrv.binded();
 
     printf("\nAddress: %s, port: %s\n", addr.c_str(), port.c_str());
-    printf("bind status: %zd\n", rdstatus);
-    if (rdstatus != 0) {
+    if (rdstatus == false) {
+        printf("TCP Server not bound\n");
         return;
     }
+    printf("TCP Server bound\n");
+    char hostName[256] = {};
+    char servName[32] = {};
     while (!KeyboardInterrupt.load()) {
-        acfd = rcsrv.nw_accept();
-        if (acfd > 0) {
-            rc = new network(acfd);
-            printToPlace(5, 1, " ", 2);
-            printf("\rClient %d accepted\x1b[0K\n", acfd);
+        acfd = rcsrv.await();
+        //printToPlace(2, 1, " ", 2);
+        if (acfd != TSRV_ERR_TIMEOUT) { 
+            printf("\raccept: %d\x1b[0K\r", acfd);
+        }
+        fflush(stdout);
+        if (acfd >= 0) {
             sbuf[0] = SRV_MSG;
             memcpy(&(sbuf[1]), "OSVC > " , 8);
-            rc->send_data(sbuf, 9);
+            sendStatus = rcsrv.sendTo(acfd, sbuf, 14);
+            if (sendStatus == TSRV_ERR_TIMEOUT) {
+                printf("Send error: connection timeout\n");
+            }
+            if (sendStatus < 0) {
+                printf("Send error: %zd\n", sendStatus);
+                continue;
+            }
+            if (sendStatus == 0) {
+                printf("No data sent.\n");
+            }
             while (!KeyboardInterrupt.load()) {
                 memset(sbuf, 16384, sizeof(uint8_t));
-                rdstatus = rc->recv_data(rbuf, 16384);
+                rdstatus = rcsrv.recvFrom(acfd, rbuf, 16384);
                 if (rdstatus <= 0) {
-                    if (rdstatus != EM_CONNECTION_TIMEDOUT) {
-                        printf("Status: %zd\x1b[0K\n", rdstatus);
+                    //std::string errstr;
+                    if (rdstatus != TSRV_ERR_TIMEOUT) {
+                        printf("recv error: %zd (%s)\n", rdstatus, strerror(-1*rdstatus));
                         break;
                     }
                 } else {
@@ -287,7 +308,7 @@ void rcom(std::string addr, std::string port) {
                             memcpy(rdata.u8, &(rbuf[rctr+1]), 4);
                             rbTimeRatio.store((double)((rdata.f32 > 0.0) ? rdata.f32 : rbTimeRatio.load()));
                             if (tr_pitch_follow) {
-                                rbPitchScale.store((rbTimeRatio.load() > 0.0) ? (1/rbTimeRatio.load()) : rbPitchScale.load());
+                                rbPitchScale.store(1.0/rbTimeRatio.load());
                             }
                             rctr += 5;
                             break;
@@ -311,7 +332,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_PITCH;
                             tdata.f32 = (float)(rbPitchScale.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -321,7 +342,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_FORMANT;
                             tdata.f32 = (float)(rbFormantScale.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -331,7 +352,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_TR;
                             tdata.f32 = (float)(rbTimeRatio.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -341,7 +362,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_DB;
                             tdata.f32 = 20.0*log10f(iPeak.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -351,7 +372,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_INPUT_LEVEL_NUM;
                             tdata.f32 = (float)(iPeak.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -361,7 +382,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_DB;
                             tdata.f32 = 20.0*log10f(oPeak.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -371,7 +392,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_OUTPUT_LEVEL_NUM;
                             tdata.f32 = (float)(oPeak.load());
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -381,7 +402,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_LATENCY_MSEC;
                             tdata.f32 = ioLatency.load();
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -391,7 +412,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_LATENCY_SAMPLES;
                             tdata.u32 = ioLatencySamples.load();
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -401,7 +422,7 @@ void rcom(std::string addr, std::string port) {
                             sbuf[0] = (uint8_t)INFO_OUTPUT_VOLUME;
                             tdata.f32 = oVolume.load();
                             memcpy(&(sbuf[1]), tdata.u8, 4);
-                            sendStatus = rc->send_data(sbuf, 5);
+                            sendStatus = rcsrv.sendTo(acfd, sbuf, 5);
                             if (sendStatus <= 0){
                                 printf("Send error ( %zd )\n", sendStatus);
                             }
@@ -422,11 +443,11 @@ void rcom(std::string addr, std::string port) {
                             rctr++;
                             break;
                         case MODE_THRU: // No following value
-                            isTHRU = true;
+                            isTHRU.store(true);
                             rctr++;
                             break;
                         case MODE_PROCESSED: //No following value
-                            isTHRU = false;
+                            isTHRU.store(false);
                             rctr++;
                             break;
                         case STREAM_LENGTH: // value: unsigned int32
@@ -437,15 +458,17 @@ void rcom(std::string addr, std::string port) {
                             break;
                     }
                 }
-                if (rdstatus != EM_CONNECTION_TIMEDOUT) {
+                if (rdstatus != TSRV_ERR_TIMEOUT) {
                     sbuf[0] = SRV_MSG;
-                    memcpy(&(sbuf[1]), "OSVC > " ,8);
-                    rc->send_data(sbuf, 9);
+                    memcpy(&(sbuf[1]), "OSVC > " , 8);
+                    rcsrv.sendTo(acfd, sbuf, 9);
                 }
             }
-            delete rc;
-            printToPlace(5, 1, " ", 2);
+            //printToPlace(5, 1, " ", 2);
             printf("\rClient %d left\x1b[0K\n", acfd);
+        } else if (acfd != TSRV_ERR_TIMEOUT) {
+            printToPlace(5, 1, " ", 2);
+            printf("Accept error: %d\n", acfd);
         }
     }
 }
