@@ -28,7 +28,7 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
     rPollFd.events = rPollFlag;
     aPollFd.events = aPollFlag;
     sPollFd.events = sPollFlag;
-    
+
     addrInfoHint.ai_protocol = IPPROTO_TCP;
     addrInfoHint.ai_family = PF_UNSPEC;
     addrInfoHint.ai_socktype = SOCK_STREAM;
@@ -57,10 +57,13 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
                     return;
                 }
 #if defined(_WIN32) || defined(_WIN64)
+                u_long ioctlret = 1;
+                ioctlsocket(sockFd, FIONBIO, &ioctlret);
 #else
                 fcntl(sockFd, F_SETFL, O_NONBLOCK);
 #endif
                 aPollFd.fd = sockFd;
+                aSockFd = sockFd;
                 getnameinfo(diRef->ai_addr, diRef->ai_addrlen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
                 printf("Bound on [%s]:%s, ", hostName, svcName);
                 printf("Proto: %s, Type: %s, Family: %s\n", (diRef->ai_protocol == IPPROTO_TCP) ? "TCP" :
@@ -99,39 +102,61 @@ TCPServer::~TCPServer() {
     cAccept() returns cID of accepted client if successed
 */
 int32_t TCPServer::await() {
+    fd_set aFdSet;
+    fd_set eFdSet;
+    FD_ZERO(&aFdSet);
+    FD_ZERO(&eFdSet);
+
     int acceptedFd = 0;
     int acceptErrno = 0;
-    int pollResult = 0;
-    int pollErrno = 0;
-    struct sockaddr peerAddr;
+    int selectResult = 0;
+    int selectErrno = 0;
+    struct sockaddr_storage peerAddr;
     socklen_t peerAddrLen = sizeof(peerAddr);
     char hostName[256] = {};
     char svcName[32] = {};
+    
+    struct timeval timeoutVal;
+    FD_SET(aSockFd, &aFdSet);
+    FD_SET(aSockFd, &eFdSet);
+    timeoutVal.tv_sec = 0;
+    timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
 
-    pollResult = poll(&aPollFd, 1, TSRV_TIMEOUT_MSEC);
-    pollErrno = (int)errno;
-    if (pollResult == -1) {
-        return (int)(pollErrno * -1);
+    selectResult = select(aSockFd+1, &aFdSet, nullptr, &eFdSet, &timeoutVal);
+    //selectResult = poll(&aPollFd, 1, TSRV_TIMEOUT_MSEC);
+    selectErrno = (int)errno;
+    if (selectResult == -1) {
+        return (int)(selectErrno * -1);
     }
-    if (pollResult == 0) {
+    if (selectResult == 0) {
         return (int)TSRV_ERR_TIMEOUT;
     }
-    if (aPollFd.revents & acHupMask) {
-        return (int)TSRV_ERR_CONN_CLOSED;
-    }
-    if (aPollFd.revents & (0|POLLERR|POLLNVAL)) {
+    //if (FD_ISSET(aSockFd, &eFdSet)) { //if (aPollFd.revents & acHupMask) {
+    //    return (int)TSRV_ERR_CONN_CLOSED;
+    //}
+    if (FD_ISSET(aSockFd, &eFdSet)) { //if (aPollFd.revents & (0|POLLERR|POLLNVAL)) {
         return (int)TSRV_ERR_GENERAL;
     }
 #ifdef _GNU_SOURCE
-    acceptedFd = accept4(sockFd, &peerAddr, &peerAddrLen, 0|SOCK_NONBLOCK|SOCK_CLOEXEC);
-#else      
-    acceptedFd = accept(sockFd, &peerAddr, &peerAddrLen);
+    acceptedFd = accept4(sockFd, (struct sockaddr*)&peerAddr, &peerAddrLen, 0|SOCK_NONBLOCK|SOCK_CLOEXEC);
+#else
+    acceptedFd = accept(sockFd, (struct sockaddr*)&peerAddr, &peerAddrLen);
+    if (acceptedFd > 0) {
+#if defined(_WIN32) || defined(_WIN64)
+        u_long ioctlret = 1;
+        ioctlsocket(acceptedFd, FIONBIO, &ioctlret);
+#else
+        fcntl(acceptedFd, F_SETFL, O_NONBLOCK); // ノンブロッキング化
+#endif
+//        int opt = 1;
+//        setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+    }
 #endif
     acceptErrno = errno;
     if (acceptedFd > 0) {
-        connect(acceptedFd, &peerAddr, peerAddrLen);
-        perror("debug");
-        getnameinfo(&peerAddr, peerAddrLen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
+        //connect(acceptedFd, &peerAddr, peerAddrLen);
+        //perror("debug");
+        getnameinfo((struct sockaddr*)&peerAddr, peerAddrLen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
         printf("Accepted [%s]:%s\n", hostName, svcName);
         cList.emplace(cListLength, acceptedFd);
         cListLength++;
@@ -144,53 +169,74 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
     if (sBuffer == nullptr) {
         return (ssize_t)TSRV_ERR_GENERAL;
     }
+    int fdNum = 0;
+    fd_set sFdSet;
+    fd_set eFdSet;
+    FD_ZERO(&sFdSet);
+    FD_ZERO(&eFdSet);
 
     int sendErrno = 0;
     ssize_t sendHeadIndex= 0;
     ssize_t sendRemain = 0;
     ssize_t sentLength = 0;
     int timeoutCount = 0;
-    int pollResult = 0;
-    ssize_t pollErrno = 0;
+    int selectResult = 0;
+    ssize_t selectErrno = 0;
     struct pollfd stPoll = {};
+
+    //int selResult = 0;
+    struct timeval timeoutVal;
 
     sendHeadIndex = 0;
     sendRemain = bufLength;
     try {
+        fdNum = cList.at(cID);
+        FD_SET(fdNum, &sFdSet);
+        FD_SET(fdNum, &eFdSet);
         stPoll.events = sPollFlag;
-        stPoll.fd = cList.at(cID);
+        stPoll.fd = fdNum;
     } catch (std::exception& e) {
         printf("Send error: %s\n", e.what());
         return TSRV_ERR_GENERAL;
     }
     while ((sendRemain > 0) && !servTerminate) {
-        pollResult = poll(&stPoll, 1, TSRV_TIMEOUT_MSEC);
-        pollErrno = errno;
-        if (pollResult == -1) {
+        timeoutVal.tv_sec = 0;
+        timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
+        FD_SET(fdNum, &sFdSet);
+        FD_SET(fdNum, &eFdSet);
+
+        //selectResult = poll(&stPoll, 1, TSRV_TIMEOUT_MSEC);
+        selectResult = select(fdNum+1, nullptr, &sFdSet, &eFdSet, &timeoutVal);
+        selectErrno = errno;
+        if (selectResult == -1) {
             try {
-                close(stPoll.fd);
+                close(fdNum);
                 cList.erase(cID);
             } catch (std::exception& e) {
                 printf("Client erased: %s\n", e.what());
             }
-            return (ssize_t)(pollErrno * -1);
+            FD_CLR(fdNum, &sFdSet);
+            FD_CLR(fdNum, &eFdSet);
+            return (ssize_t)(selectErrno * -1);
         }
-        if (pollResult == 0) {
+        if (selectResult == 0) {
             timeoutCount++;
             if (timeoutCount > timeoutCountMax) {
+                FD_CLR(fdNum, &sFdSet);
+                FD_CLR(fdNum, &eFdSet);
                 return TSRV_ERR_TIMEOUT;
             }
         }
-        if (pollResult > 0) {
-            printf("Sending to %d...\n", stPoll.fd);
+        if (selectResult > 0) {
+            printf("Sending to %d...\n", fdNum);
             if (sendHeadIndex >= bufLength) {
                 break;
             }
-            if (stPoll.revents & (0|POLLOUT)) {
+            if (FD_ISSET(fdNum, &sFdSet)) { //(stPoll.revents & (0|POLLOUT)) {
 #if defined(_WIN32) || defined(_WIN64)
-                sentLength = send(stPoll.fd, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
+                sentLength = send(fdNum, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
 #else
-                sentLength = send(stPoll.fd, &(sBuffer[sendHeadIndex]), sendRemain, 0);
+                sentLength = send(fdNum, &(sBuffer[sendHeadIndex]), sendRemain, 0);
 #endif
                 sendErrno = errno;
                 if (sentLength > 0) {
@@ -201,11 +247,27 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                         case EAGAIN:
                             continue;
                         default:
+                            printf("Send returned %zd\n", sentLength);
+                            printf("Send errno: %d (%s) \n", sendErrno, strerror(sendErrno));
+                            FD_CLR(fdNum, &sFdSet);
+                            FD_CLR(fdNum, &eFdSet);
                             return (sendErrno * -1);
                     }
                 }
-            } else {
-                perror("debug");
+            }
+            if (FD_ISSET(fdNum, &eFdSet)) { //else {
+                printf("Select error.\n");
+                try {
+                    close(fdNum);
+                    cList.erase(cID);
+                    FD_CLR(fdNum, &sFdSet);
+                    FD_CLR(fdNum, &eFdSet);
+                } catch (std::exception& e) {
+                    printf("Client erased: %s\n", e.what());
+                }
+                return (ssize_t)TSRV_ERR_CONN_CLOSED;
+                //perror("debug");
+                /*
                 if (stPoll.revents & (0|POLLHUP)) {
                     try {
                         close(stPoll.fd);
@@ -223,7 +285,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                         printf("Client erased: %s\n", e.what());
                     }
                     return TSRV_ERR_GENERAL;
-                }
+                }*/
             }
         }
     }
@@ -232,7 +294,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
 
 ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
     ssize_t rfBytesLength = 0;
-    ssize_t rfPollErrno = 0;
+    ssize_t rfselectErrno = 0;
     int rfPollRes = 0;
     int rfErrno = 0;
     struct pollfd rfPoll = {};
@@ -249,10 +311,10 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
     }
 
     rfPollRes = poll(&rfPoll, 1, TSRV_TIMEOUT_MSEC);
-    rfPollErrno = (ssize_t)errno;
+    rfselectErrno = (ssize_t)errno;
     if (rfPollRes == -1) {
         close(rfPoll.fd);
-        return (ssize_t)(rfPollErrno * -1);
+        return (ssize_t)(rfselectErrno * -1);
     }
     if (rfPollRes == 0) {
         return (ssize_t)TSRV_ERR_TIMEOUT;

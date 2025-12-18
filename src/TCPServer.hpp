@@ -38,6 +38,7 @@
 #define poll(fdArray, fds, timeout) WSAPoll(fdArray, fds, timeout)
 #define close(close_fd) closesocket(close_fd)
 #else
+#include <sys/select.h>
 #include "fcntl.h"
 #include "unistd.h"
 #include "netdb.h"
@@ -49,6 +50,8 @@
 #endif
 
 #define TSRV_TIMEOUT_MSEC 1000
+#define TSRV_TIMEOUT_SEC 1
+#define TSRV_TIMEOUT_USEC 500000
 #define TSRV_ERR_TIMEOUT -1024
 #define TSRV_ERR_CONN_CLOSED -1025
 #define TSRV_ERR_GENERAL -2048
@@ -68,6 +71,7 @@ class TCPServer {
         std::map<int32_t, int> cList;
         int32_t cListLength = 0;
         int sockFd = 0;
+        int aSockFd = 0;
         struct pollfd aPollFd; // accept pollfd
         struct pollfd rPollFd; // recv poll fd
         struct pollfd sPollFd; // send poll fd
