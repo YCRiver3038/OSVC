@@ -1,13 +1,13 @@
-#include "TCPServer.hpp"
+#include "UDPServer.hpp"
 
-volatile bool servTerminate = false;
+volatile bool uServTerminate = false;
 const int timeoutCountMax = 10;
 
-bool TCPServer::bound() {
+bool UDPServer::bound() {
     return srvBind;
 }
 
-TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
+UDPServer::UDPServer(std::string bindAddr, std::string bindPort) {
     int retErrno = 0;
     int bindStatus = 0;
     char hostName[256] = {};
@@ -25,9 +25,9 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
     int sockOptValue = 1;
 #endif
 
-    addrInfoHint.ai_protocol = IPPROTO_TCP;
+    addrInfoHint.ai_protocol = IPPROTO_UDP;
     addrInfoHint.ai_family = PF_UNSPEC;
-    addrInfoHint.ai_socktype = SOCK_STREAM;
+    addrInfoHint.ai_socktype = SOCK_DGRAM;
     addrInfoHint.ai_flags = addrInfoHint.ai_flags | AI_PASSIVE;
     getaddrinfo(bindAddr.c_str(), bindPort.c_str(), &addrInfoHint, &destInfo);
 
@@ -35,7 +35,7 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
         return;
     }
     for (struct addrinfo* diRef = destInfo; diRef != nullptr; diRef = diRef->ai_next) {
-        if (servTerminate) {
+        if (uServTerminate) {
             break;
         }
         sockFd = socket(diRef->ai_family, diRef->ai_socktype, 0);
@@ -46,12 +46,6 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
             retErrno = errno;
             if (bindStatus == 0) {
                 srvBind = true;
-                int listen_status = 0;
-                listen_status = listen(sockFd, 8);
-                retErrno = errno;
-                if (listen_status != 0) {
-                    return;
-                }
 #if defined(_WIN32) || defined(_WIN64)
                 u_long ioctlret = 1;
                 ioctlsocket(sockFd, FIONBIO, &ioctlret);
@@ -81,10 +75,10 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
     return;
 }
 
-TCPServer::~TCPServer() {
-    for (auto client = cList.begin(); client != cList.end(); client++) {
+UDPServer::~UDPServer() {
+    /*for (auto client = cList.begin(); client != cList.end(); client++) {
         close(client->second);
-    }
+    }*/
     if (srvBind) {
         close(sockFd);
     }
@@ -98,67 +92,9 @@ TCPServer::~TCPServer() {
 #endif
 }
 
-/*
-    cAccept() returns cID of accepted client if successed
-*/
-int32_t TCPServer::await() {
-    fd_set aFdSet;
-    FD_ZERO(&aFdSet);
-
-    int acceptedFd = 0;
-    int acceptErrno = 0;
-    int selectResult = 0;
-    int selectErrno = 0;
-    struct sockaddr_storage peerAddr;
-    socklen_t peerAddrLen = sizeof(peerAddr);
-    char hostName[256] = {};
-    char svcName[32] = {};
-    
-    struct timeval timeoutVal;
-    FD_SET(aSockFd, &aFdSet);
-    timeoutVal.tv_sec = 0;
-    timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
-
-    selectResult = select(aSockFd+1, &aFdSet, nullptr, nullptr, &timeoutVal);
-    selectErrno = (int)errno;
-    if (selectResult == -1) {
-        FD_CLR(aSockFd, &aFdSet);
-        return (int)(selectErrno * -1);
-    }
-    if (selectResult == 0) {
-        return (int)TSRV_ERR_TIMEOUT;
-    }
-#ifdef _GNU_SOURCE
-    acceptedFd = accept4(sockFd, (struct sockaddr*)&peerAddr, &peerAddrLen, 0|SOCK_NONBLOCK|SOCK_CLOEXEC);
-#else
-    acceptedFd = accept(sockFd, (struct sockaddr*)&peerAddr, &peerAddrLen);
-    if (acceptedFd >= 0) {
-#if defined(_WIN32) || defined(_WIN64)
-        u_long ioctlret = 1;
-        ioctlsocket(acceptedFd, FIONBIO, &ioctlret);
-#else
-        fcntl(acceptedFd, F_SETFL, O_NONBLOCK); // ノンブロッキング化
-#endif
-#ifdef SO_NOSIGPIPE
-        int opt = 1;
-        setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
-#endif
-    }
-#endif
-    acceptErrno = errno;
-    if (acceptedFd > 0) {
-        getnameinfo((struct sockaddr*)&peerAddr, peerAddrLen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
-        printf("Accepted [%s]:%s on fd %d\n", hostName, svcName, acceptedFd);
-        cList.emplace(cListLength, acceptedFd);
-        cListLength++;
-        return cListLength - 1;
-    }
-    return -1 * acceptErrno;
-}
-
-ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
+ssize_t UDPServer::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
     if (sBuffer == nullptr) {
-        return (ssize_t)TSRV_ERR_GENERAL;
+        return (ssize_t)USRV_ERR_GENERAL;
     }
     int fdNum = 0;
     fd_set sFdSet;
@@ -177,15 +113,15 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
     sendHeadIndex = 0;
     sendRemain = bufLength;
     try {
-        fdNum = cList.at(cID);
+        fdNum = sockFd;
         FD_SET(fdNum, &sFdSet);
     } catch (std::exception& e) {
         printf("Send error: no corresponding ID ( %s )\n", e.what());
-        return TSRV_ERR_GENERAL;
+        return USRV_ERR_GENERAL;
     }
-    while ((sendRemain > 0) && !servTerminate) {
+    while ((sendRemain > 0) && !uServTerminate) {
         timeoutVal.tv_sec = 0;
-        timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
+        timeoutVal.tv_usec = USRV_TIMEOUT_USEC;
         FD_SET(fdNum, &sFdSet);
         selectResult = select(fdNum+1, nullptr, &sFdSet, nullptr, &timeoutVal);
         selectErrno = errno;
@@ -193,7 +129,6 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
             FD_CLR(fdNum, &sFdSet);
             try {
                 close(fdNum);
-                cList.erase(cID);
             } catch (std::exception& e) {
                 printf("Client erased: %s\n", e.what());
             }
@@ -204,7 +139,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
             timeoutCount++;
             if (timeoutCount > timeoutCountMax) {
                 FD_CLR(fdNum, &sFdSet);
-                return TSRV_ERR_TIMEOUT;
+                return USRV_ERR_TIMEOUT;
             }
         }
         printf("Sending to %d...\n", fdNum);
@@ -240,9 +175,9 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
     return sendHeadIndex;
 }
 
-ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
+ssize_t UDPServer::recvFrom(uint8_t* rBuffer, uint32_t bufLength) {
     if (!rBuffer) {
-        return TSRV_ERR_GENERAL;
+        return USRV_ERR_GENERAL;
     }
 
     int fdNum = 0;
@@ -257,14 +192,14 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
     int rfErrno = 0;
 
     try {
-        fdNum = cList.at(cID);
+        fdNum = sockFd;
     } catch (std::exception& e) {
         printf("Recv error: %s\n", e.what());
-        return TSRV_ERR_GENERAL;
+        return USRV_ERR_GENERAL;
     }
 
     timeoutVal.tv_sec = 0;
-    timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
+    timeoutVal.tv_usec = USRV_TIMEOUT_USEC;
     FD_SET(fdNum, &rFdSet);
     rfSelectRes = select(fdNum+1, &rFdSet, nullptr, nullptr, &timeoutVal);
     rfselectErrno = (ssize_t)errno;
@@ -273,12 +208,11 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
         printf("recv error: %d ( %s )...\n", fdNum, strerror(rfselectErrno));
         FD_CLR(fdNum, &rFdSet);
         close(fdNum);
-        cList.erase(cID);
         return (ssize_t)(rfselectErrno * -1);
     }
     if (rfSelectRes == 0) {
         FD_CLR(fdNum, &rFdSet);
-        return (ssize_t)TSRV_ERR_TIMEOUT;
+        return (ssize_t)USRV_ERR_TIMEOUT;
     }
     if (FD_ISSET(fdNum, &rFdSet)) {
 #if defined(_WIN32) || defined(_WIN64)
@@ -290,12 +224,10 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
         if (rfBytesLength < 0) {
             FD_CLR(fdNum, &rFdSet);
             close(fdNum);
-            cList.erase(cID);
             return -1*rfErrno;
         }
         return rfBytesLength;
     }
     close(fdNum);
-    cList.erase(cID);
-    return TSRV_ERR_GENERAL;
+    return USRV_ERR_GENERAL;
 }
