@@ -56,7 +56,17 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
                 u_long ioctlret = 1;
                 ioctlsocket(sockFd, FIONBIO, &ioctlret);
 #else
-                fcntl(sockFd, F_SETFL, O_NONBLOCK);
+                int oldFlag = 0;
+                int fcerr = 0;
+                oldFlag = fcntl(sockFd, F_GETFL);
+                fcerr = errno;
+                //printf("fcntl: %d, oldflag: %d\n", fcerr, oldFlag);
+                if (oldFlag != -1) {
+                    fcntl(sockFd, F_SETFL, oldFlag|O_NONBLOCK); // ノンブロッキング化
+                    fcerr = errno;
+                }
+                //printf("fcntl: %d, newflag: %d\n", fcerr, oldFlag|O_NONBLOCK);
+                //fcntl(sockFd, F_SETFL, O_NONBLOCK);
 #endif
                 int opt = 1;
 #ifdef SO_NOSIGPIPE
@@ -137,7 +147,17 @@ int32_t TCPServer::await() {
         u_long ioctlret = 1;
         ioctlsocket(acceptedFd, FIONBIO, &ioctlret);
 #else
-        fcntl(acceptedFd, F_SETFL, O_NONBLOCK); // ノンブロッキング化
+        int oldFlag = 0;
+        int fcerr = 0;
+        oldFlag = fcntl(acceptedFd, F_GETFL);
+        fcerr = errno;
+        perror("debug");
+        printf("fcntl: %d, oldflag: %d\n", fcerr, oldFlag);
+        if (oldFlag != -1) {
+            fcntl(acceptedFd, F_SETFL, oldFlag|O_NONBLOCK); // ノンブロッキング化
+            fcerr = errno;
+        }
+        printf("fcntl: %d, newflag: %d\n", fcerr, oldFlag|O_NONBLOCK);
 #endif
 #ifdef SO_NOSIGPIPE
         int opt = 1;

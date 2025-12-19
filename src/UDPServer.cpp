@@ -50,7 +50,17 @@ UDPServer::UDPServer(std::string bindAddr, std::string bindPort) {
                 u_long ioctlret = 1;
                 ioctlsocket(sockFd, FIONBIO, &ioctlret);
 #else
-                fcntl(sockFd, F_SETFL, O_NONBLOCK);
+                int oldFlag = 0;
+                int fcerr = 0;
+                oldFlag = fcntl(sockFd, F_GETFL);
+                fcerr = errno;
+                //printf("fcntl: %d, oldflag: %d\n", fcerr, oldFlag);
+                if (oldFlag != -1) {
+                    fcntl(sockFd, F_SETFL, oldFlag|O_NONBLOCK); // ノンブロッキング化
+                    fcerr = errno;
+                }
+                //printf("fcntl: %d, newflag: %d\n", fcerr, oldFlag|O_NONBLOCK);
+                //fcntl(sockFd, F_SETFL, O_NONBLOCK);
 #endif
                 int opt = 1;
 #ifdef SO_NOSIGPIPE
@@ -165,7 +175,6 @@ ssize_t UDPServer::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
                         printf("Send returned %zd\n", sentLength);
                         printf("Send errno: %d (%s) \n", sendErrno, strerror(sendErrno));
                         FD_CLR(fdNum, &sFdSet);
-                        //FD_CLR(fdNum, &eFdSet);
                         return (sendErrno * -1);
                 }
             }
