@@ -18,7 +18,12 @@
 #include "signal.h"
 
 #include "rubberband/RubberBandStretcher.h"
+//#include "nlohmann/json.hpp"
 
+#include "network.hpp"
+#include "TCPServer.hpp"
+#include "UDPServer.hpp"
+#include "remocon.h"
 #include "AudioManipulator.hpp"
 
 #if defined(_WIN32) || defined(_WIN64)

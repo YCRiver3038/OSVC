@@ -5,6 +5,7 @@ add_executable(osvc src/main.cpp)
 add_executable(remocon src/rcom.cpp)
 add_library(NW STATIC src/network.cpp)
 add_library(TCPSRV STATIC src/TCPServer.cpp)
+add_library(UDPSRV STATIC src/UDPServer.cpp)
 
 find_package(PkgConfig)
 pkg_check_modules(PORTAUDIO REQUIRED portaudio-2.0)
@@ -17,11 +18,13 @@ target_include_directories(osvc PUBLIC ${PORTAUDIO_INCLUDE_DIRS} ${RUBBERBAND_IN
 target_compile_options(osvc PUBLIC --std=c++17 -O3)
 target_compile_options(remocon PUBLIC --std=c++17)
 target_compile_options(NW PUBLIC --std=c++17 -O3)
+target_compile_options(TCPSRV PUBLIC --std=c++17)
+target_compile_options(UDPSRV PUBLIC --std=c++17)
 
 if(WIN32)
-    target_link_libraries(osvc NW TCPSRV wsock32 ws2_32 ${PORTAUDIO_LIBRARIES} ${RUBBERBAND_LIBRARIES})
+    target_link_libraries(osvc NW TCPSRV UDPSRV wsock32 ws2_32 ${PORTAUDIO_LIBRARIES} ${RUBBERBAND_LIBRARIES})
 else()
-    target_link_libraries(osvc NW TCPSRV ${PORTAUDIO_LIBRARIES} ${RUBBERBAND_LIBRARIES})
+    target_link_libraries(osvc NW TCPSRV UDPSRV ${PORTAUDIO_LIBRARIES} ${RUBBERBAND_LIBRARIES})
 endif()
 
 if(WIN32)

@@ -1,9 +1,4 @@
 #include "main.h"
-//#include "nlohmann/json.hpp"
-#include "network.hpp"
-#include "TCPServer.hpp"
-
-#include "remocon.h"
 
 std::atomic<bool> KeyboardInterrupt;
 void kbiHandler(int signo) {
@@ -556,24 +551,26 @@ void rAudioRxThr(ring_buffer<float>* rbAudioIn,
         return;
     }
 
-    network rAudioReceiver(rAddr, rPort, SOCK_DGRAM);
+    UDPServer rAudioReceiverU(rAddr, rPort);
+    //network rAudioReceiver(rAddr, rPort, SOCK_DGRAM);
     int rAudioFd = 0;
-    constexpr int rxDataLenMax = 16384;
+    constexpr int rxDataLenMax = 2048;
     ssize_t rDataBytesSize = 0;
     ssize_t rDataLength = 0;
     float rxData[rxDataLenMax] = {0};
 
-    if (rAudioReceiver.nw_bind_and_listen() != 0) {
-        printf("Audio stream input error: Network error\n");
+    if (!rAudioReceiverU.bound()) {//(rAudioReceiver.nw_bind_and_listen() != 0) {
+        printf("\nAudio stream input error: Network error\n");
         return;
     } else {
-        printf("Audio input binded on [%s]:%s\n", rAddr.c_str(), rPort.c_str());
+        printf("\nAudio input bound on [%s]:%s\n", rAddr.c_str(), rPort.c_str());
     }
-
     while (!KeyboardInterrupt.load()) {
-        rDataBytesSize = rAudioReceiver.recv_data((uint8_t*)rxData, rxDataLenMax*sizeof(float));
+        //rDataBytesSize = rAudioReceiverU.recv_data((uint8_t*)rxData, rxDataLenMax*sizeof(float));
+        rDataBytesSize = rAudioReceiverU.recvFrom((uint8_t*)rxData, rxDataLenMax*sizeof(float));
         if (rDataBytesSize <= 0) {
-            if (rDataBytesSize != EM_CONNECTION_TIMEDOUT) {
+            if (rDataBytesSize != USRV_ERR_TIMEOUT) {
+                printf("Receive error: %zd", rDataBytesSize);
                 break;
             }
         }
@@ -582,7 +579,7 @@ void rAudioRxThr(ring_buffer<float>* rbAudioIn,
             rbAudioIn->put_data_memcpy(rxData, rDataLength);
         }
     }
-    rAudioReceiver.nw_close();
+    //rAudioReceiver.nw_close();
 }
 
 void statusWindow(AudioManipulator* const aIn, AudioManipulator* const aOut,
