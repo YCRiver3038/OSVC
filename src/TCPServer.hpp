@@ -35,7 +35,6 @@
 // Need to link with Ws2_32.lib
 #pragma comment(lib, "ws2_32.lib")
 
-#define poll(fdArray, fds, timeout) WSAPoll(fdArray, fds, timeout)
 #define close(close_fd) closesocket(close_fd)
 #else
 #include <sys/select.h>

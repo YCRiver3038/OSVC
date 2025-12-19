@@ -123,7 +123,6 @@ int32_t TCPServer::await() {
     timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
 
     selectResult = select(aSockFd+1, &aFdSet, nullptr, &eFdSet, &timeoutVal);
-    //selectResult = poll(&aPollFd, 1, TSRV_TIMEOUT_MSEC);
     selectErrno = (int)errno;
     if (selectResult == -1) {
         FD_CLR(aSockFd, &aFdSet);
@@ -133,10 +132,10 @@ int32_t TCPServer::await() {
     if (selectResult == 0) {
         return (int)TSRV_ERR_TIMEOUT;
     }
-    //if (FD_ISSET(aSockFd, &eFdSet)) { //if (aPollFd.revents & acHupMask) {
+    //if (FD_ISSET(aSockFd, &eFdSet)) {
     //    return (int)TSRV_ERR_CONN_CLOSED;
     //}
-    if (FD_ISSET(aSockFd, &eFdSet)) { //if (aPollFd.revents & (0|POLLERR|POLLNVAL)) {
+    if (FD_ISSET(aSockFd, &eFdSet)) {
         FD_CLR(aSockFd, &aFdSet);
         FD_CLR(aSockFd, &eFdSet);
         return (int)TSRV_ERR_GENERAL;
@@ -186,9 +185,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
     int timeoutCount = 0;
     int selectResult = 0;
     ssize_t selectErrno = 0;
-    struct pollfd stPoll = {};
 
-    //int selResult = 0;
     struct timeval timeoutVal;
 
     sendHeadIndex = 0;
@@ -197,7 +194,6 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
         fdNum = cList.at(cID);
         FD_SET(fdNum, &sFdSet);
         FD_SET(fdNum, &eFdSet);
-        stPoll.fd = fdNum;
     } catch (std::exception& e) {
         printf("Send error: %s\n", e.what());
         return TSRV_ERR_GENERAL;
@@ -233,7 +229,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
         if (sendHeadIndex >= bufLength) {
             break;
         }
-        if (FD_ISSET(fdNum, &eFdSet)) { //else {
+        if (FD_ISSET(fdNum, &eFdSet)) {
             printf("Select error.\n");
             try {
                 cList.erase(cID);
@@ -245,7 +241,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
             }
             return (ssize_t)TSRV_ERR_CONN_CLOSED;
         }
-        if (FD_ISSET(fdNum, &sFdSet)) { //(stPoll.revents & (0|POLLOUT)) {
+        if (FD_ISSET(fdNum, &sFdSet)) {
 #if defined(_WIN32) || defined(_WIN64)
             sentLength = send(fdNum, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
 #else
@@ -291,10 +287,8 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
     ssize_t rfselectErrno = 0;
     int rfSelectRes = 0;
     int rfErrno = 0;
-    struct pollfd rfPoll = {};
+
     try {
-        //rfPoll.events = rPollFlag;
-        //fdNum = cList.at(cID);
         fdNum = cList.at(cID);
     } catch (std::exception& e) {
         printf("Recv error: %s\n", e.what());
