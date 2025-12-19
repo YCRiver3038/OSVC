@@ -72,23 +72,7 @@ class TCPServer {
         int32_t cListLength = 0;
         int sockFd = 0;
         int aSockFd = 0;
-        struct pollfd aPollFd; // accept pollfd
-        struct pollfd rPollFd; // recv poll fd
-        struct pollfd sPollFd; // send poll fd
         bool srvBind = false;
-#ifdef _GNU_SOURCE
-        const short rPollFlag = POLLIN | POLLRDHUP | POLLHUP | POLLERR | POLLNVAL; // recv poll flags
-        const short aPollFlag = POLLIN | POLLRDHUP | POLLHUP| POLLERR | POLLNVAL; // accept poll flags
-        const short sPollFlag = POLLOUT | POLLHUP | POLLERR | POLLNVAL; // send poll flags
-        const short acHupMask = 0|POLLRDHUP|POLLHUP;
-        const short rdHupMask = 0|POLLRDHUP|POLLHUP;
-#else
-        const short rPollFlag = POLLIN | POLLERR | POLLNVAL; // recv poll flags
-        const short aPollFlag = POLLIN  | POLLERR | POLLNVAL; // accept poll flags
-        const short sPollFlag = POLLOUT | POLLHUP | POLLERR | POLLNVAL; // send poll flags
-        const short acHupMask = 0|POLLHUP;
-        const short rdHupMask = 0|POLLHUP;
-#endif
 
     public:
         TCPServer(std::string bindAddr, std::string bindPort);

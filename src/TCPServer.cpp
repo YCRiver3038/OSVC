@@ -25,10 +25,6 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
     int sockOptValue = 1;
 #endif
 
-    rPollFd.events = rPollFlag;
-    aPollFd.events = aPollFlag;
-    sPollFd.events = sPollFlag;
-
     addrInfoHint.ai_protocol = IPPROTO_TCP;
     addrInfoHint.ai_family = PF_UNSPEC;
     addrInfoHint.ai_socktype = SOCK_STREAM;
@@ -62,7 +58,11 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
 #else
                 fcntl(sockFd, F_SETFL, O_NONBLOCK);
 #endif
-                aPollFd.fd = sockFd;
+                int opt = 1;
+#ifdef SO_NOSIGPIPE
+                setsockopt(sockFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+#endif
+                setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
                 aSockFd = sockFd;
                 getnameinfo(diRef->ai_addr, diRef->ai_addrlen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
                 printf("Bound on [%s]:%s, ", hostName, svcName);
@@ -126,6 +126,8 @@ int32_t TCPServer::await() {
     //selectResult = poll(&aPollFd, 1, TSRV_TIMEOUT_MSEC);
     selectErrno = (int)errno;
     if (selectResult == -1) {
+        FD_CLR(aSockFd, &aFdSet);
+        FD_CLR(aSockFd, &eFdSet);
         return (int)(selectErrno * -1);
     }
     if (selectResult == 0) {
@@ -135,6 +137,8 @@ int32_t TCPServer::await() {
     //    return (int)TSRV_ERR_CONN_CLOSED;
     //}
     if (FD_ISSET(aSockFd, &eFdSet)) { //if (aPollFd.revents & (0|POLLERR|POLLNVAL)) {
+        FD_CLR(aSockFd, &aFdSet);
+        FD_CLR(aSockFd, &eFdSet);
         return (int)TSRV_ERR_GENERAL;
     }
 #ifdef _GNU_SOURCE
@@ -148,14 +152,14 @@ int32_t TCPServer::await() {
 #else
         fcntl(acceptedFd, F_SETFL, O_NONBLOCK); // ノンブロッキング化
 #endif
-//        int opt = 1;
-//        setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+#ifdef SO_NOSIGPIPE
+        int opt = 1;
+        setsockopt(sockFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+#endif
     }
 #endif
     acceptErrno = errno;
     if (acceptedFd > 0) {
-        //connect(acceptedFd, &peerAddr, peerAddrLen);
-        //perror("debug");
         getnameinfo((struct sockaddr*)&peerAddr, peerAddrLen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
         printf("Accepted [%s]:%s\n", hostName, svcName);
         cList.emplace(cListLength, acceptedFd);
@@ -193,7 +197,6 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
         fdNum = cList.at(cID);
         FD_SET(fdNum, &sFdSet);
         FD_SET(fdNum, &eFdSet);
-        stPoll.events = sPollFlag;
         stPoll.fd = fdNum;
     } catch (std::exception& e) {
         printf("Send error: %s\n", e.what());
@@ -205,18 +208,17 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
         FD_SET(fdNum, &sFdSet);
         FD_SET(fdNum, &eFdSet);
 
-        //selectResult = poll(&stPoll, 1, TSRV_TIMEOUT_MSEC);
         selectResult = select(fdNum+1, nullptr, &sFdSet, &eFdSet, &timeoutVal);
         selectErrno = errno;
         if (selectResult == -1) {
+            FD_CLR(fdNum, &sFdSet);
+            FD_CLR(fdNum, &eFdSet);
             try {
                 close(fdNum);
                 cList.erase(cID);
             } catch (std::exception& e) {
                 printf("Client erased: %s\n", e.what());
             }
-            FD_CLR(fdNum, &sFdSet);
-            FD_CLR(fdNum, &eFdSet);
             return (ssize_t)(selectErrno * -1);
         }
         if (selectResult == 0) {
@@ -227,122 +229,116 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                 return TSRV_ERR_TIMEOUT;
             }
         }
-        if (selectResult > 0) {
-            printf("Sending to %d...\n", fdNum);
-            if (sendHeadIndex >= bufLength) {
-                break;
+        //printf("Sending to %d...\n", fdNum);
+        if (sendHeadIndex >= bufLength) {
+            break;
+        }
+        if (FD_ISSET(fdNum, &eFdSet)) { //else {
+            printf("Select error.\n");
+            try {
+                cList.erase(cID);
+                FD_CLR(fdNum, &sFdSet);
+                FD_CLR(fdNum, &eFdSet);
+                close(fdNum);
+            } catch (std::exception& e) {
+                printf("Client erased: %s\n", e.what());
             }
-            if (FD_ISSET(fdNum, &sFdSet)) { //(stPoll.revents & (0|POLLOUT)) {
+            return (ssize_t)TSRV_ERR_CONN_CLOSED;
+        }
+        if (FD_ISSET(fdNum, &sFdSet)) { //(stPoll.revents & (0|POLLOUT)) {
 #if defined(_WIN32) || defined(_WIN64)
-                sentLength = send(fdNum, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
+            sentLength = send(fdNum, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
 #else
-                sentLength = send(fdNum, &(sBuffer[sendHeadIndex]), sendRemain, 0);
+            sentLength = send(fdNum, &(sBuffer[sendHeadIndex]), sendRemain, 0);
 #endif
-                sendErrno = errno;
-                if (sentLength > 0) {
-                    sendHeadIndex += sentLength;
-                    sendRemain -= sentLength;
-                } else {
-                    switch(sendErrno){
-                        case EAGAIN:
-                            continue;
-                        default:
-                            printf("Send returned %zd\n", sentLength);
-                            printf("Send errno: %d (%s) \n", sendErrno, strerror(sendErrno));
-                            FD_CLR(fdNum, &sFdSet);
-                            FD_CLR(fdNum, &eFdSet);
-                            return (sendErrno * -1);
-                    }
+            sendErrno = errno;
+            if (sentLength > 0) {
+                //printf("OK\n");
+                sendHeadIndex += sentLength;
+                sendRemain -= sentLength;
+            } else {
+                switch(sendErrno){
+                    case EAGAIN:
+                        continue;
+                    default:
+                        printf("Send returned %zd\n", sentLength);
+                        printf("Send errno: %d (%s) \n", sendErrno, strerror(sendErrno));
+                        FD_CLR(fdNum, &sFdSet);
+                        FD_CLR(fdNum, &eFdSet);
+                        return (sendErrno * -1);
                 }
-            }
-            if (FD_ISSET(fdNum, &eFdSet)) { //else {
-                printf("Select error.\n");
-                try {
-                    close(fdNum);
-                    cList.erase(cID);
-                    FD_CLR(fdNum, &sFdSet);
-                    FD_CLR(fdNum, &eFdSet);
-                } catch (std::exception& e) {
-                    printf("Client erased: %s\n", e.what());
-                }
-                return (ssize_t)TSRV_ERR_CONN_CLOSED;
-                //perror("debug");
-                /*
-                if (stPoll.revents & (0|POLLHUP)) {
-                    try {
-                        close(stPoll.fd);
-                        cList.erase(cID);
-                    } catch (std::exception& e) {
-                        printf("Client erased: %s\n", e.what());
-                    }
-                    return (ssize_t)TSRV_ERR_CONN_CLOSED;
-                }
-                if (stPoll.revents & (0|POLLERR|POLLNVAL)) {
-                    try {
-                        close(stPoll.fd);
-                        cList.erase(cID);
-                    } catch (std::exception& e) {
-                        printf("Client erased: %s\n", e.what());
-                    }
-                    return TSRV_ERR_GENERAL;
-                }*/
             }
         }
+        //printf("Send remain: %zd\n", sendRemain);
     }
     return sendHeadIndex;
 }
 
 ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
+    if (!rBuffer) {
+        return TSRV_ERR_GENERAL;
+    }
+
+    int fdNum = 0;
+    fd_set rFdSet;
+    fd_set eFdSet;
+    FD_ZERO(&rFdSet);
+    FD_ZERO(&eFdSet);
+
+    struct timeval timeoutVal;
+
     ssize_t rfBytesLength = 0;
     ssize_t rfselectErrno = 0;
-    int rfPollRes = 0;
+    int rfSelectRes = 0;
     int rfErrno = 0;
     struct pollfd rfPoll = {};
     try {
-        rfPoll.events = rPollFlag;
-        rfPoll.fd = cList.at(cID);
+        //rfPoll.events = rPollFlag;
+        //fdNum = cList.at(cID);
+        fdNum = cList.at(cID);
     } catch (std::exception& e) {
         printf("Recv error: %s\n", e.what());
         return TSRV_ERR_GENERAL;
     }
 
-    if (rBuffer == nullptr) {
-        return TSRV_ERR_GENERAL;
-    }
-
-    rfPollRes = poll(&rfPoll, 1, TSRV_TIMEOUT_MSEC);
+    timeoutVal.tv_sec = 0;
+    timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
+    FD_SET(fdNum, &rFdSet);
+    FD_SET(fdNum, &eFdSet);
+    rfSelectRes = select(fdNum+1, &rFdSet, nullptr, &eFdSet, &timeoutVal);
     rfselectErrno = (ssize_t)errno;
-    if (rfPollRes == -1) {
-        close(rfPoll.fd);
+    if (rfSelectRes == -1) {
+        FD_CLR(fdNum, &rFdSet);
+        FD_CLR(fdNum, &eFdSet);
+        close(fdNum);
         return (ssize_t)(rfselectErrno * -1);
     }
-    if (rfPollRes == 0) {
+    if (rfSelectRes == 0) {
+        FD_CLR(fdNum, &rFdSet);
+        FD_CLR(fdNum, &eFdSet);
         return (ssize_t)TSRV_ERR_TIMEOUT;
     }
-    if (rfPoll.revents & rdHupMask) {
-        close(rfPoll.fd);
-        return (ssize_t)TSRV_ERR_CONN_CLOSED;
-    }
-    if (rfPoll.revents & (0|POLLERR|POLLNVAL)) {
-        close(rfPoll.fd);
+    if (FD_ISSET(fdNum, &eFdSet)) {
+        FD_CLR(fdNum, &rFdSet);
+        FD_CLR(fdNum, &eFdSet);
+        close(fdNum);
         return (ssize_t)TSRV_ERR_GENERAL;
     }
-    if (rfPoll.revents & 0|POLLIN) {
+    if (FD_ISSET(fdNum, &rFdSet)) {
 #if defined(_WIN32) || defined(_WIN64)
-        rfBytesLength = recvfrom(rfPoll.fd, (char*)rBuffer, bufLength, 0, nullptr, 0);
+        rfBytesLength = recvfrom(fdNum, (char*)rBuffer, bufLength, 0, nullptr, 0);
 #else
-        rfBytesLength = recvfrom(rfPoll.fd, rBuffer, bufLength, 0, nullptr, 0);
+        rfBytesLength = recvfrom(fdNum, rBuffer, bufLength, 0, nullptr, 0);
 #endif
         rfErrno = errno;
         if (rfBytesLength < 0) {
-            close(rfPoll.fd);
+            FD_CLR(fdNum, &rFdSet);
+            FD_CLR(fdNum, &eFdSet);
+            close(fdNum);
             return -1*rfErrno;
-        }
-        if (rfBytesLength == 0) {
-            return 0;
         }
         return rfBytesLength;
     }
-    close(rfPoll.fd);
+    close(fdNum);
     return TSRV_ERR_GENERAL;
 }

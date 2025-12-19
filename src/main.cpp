@@ -281,12 +281,17 @@ void rcom(std::string addr, std::string port, bool execute) {
             while (!KeyboardInterrupt.load()) {
                 memset(sbuf, 16384, sizeof(uint8_t));
                 rdstatus = rcsrv.recvFrom(acfd, rbuf, 16384);
-                if (rdstatus <= 0) {
+                if (rdstatus == 0) {
+                    printf("Connection closed. (recv %zd) \n", rdstatus);
+                    break;
+                }
+                if (rdstatus < 0) {
                     //std::string errstr;
                     if (rdstatus != TSRV_ERR_TIMEOUT) {
                         printf("recv error: %zd (%s)\n", rdstatus, strerror(-1*rdstatus));
                         break;
                     }
+                    //fflush(stdout);
                 } else {
                     printToPlace(12, 1, " ", 2);
                     printf("\rReceived:\x1b[0K\n");
