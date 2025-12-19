@@ -103,9 +103,9 @@ TCPServer::~TCPServer() {
 */
 int32_t TCPServer::await() {
     fd_set aFdSet;
-    fd_set eFdSet;
+    //fd_set eFdSet;
     FD_ZERO(&aFdSet);
-    FD_ZERO(&eFdSet);
+    //FD_ZERO(&eFdSet);
 
     int acceptedFd = 0;
     int acceptErrno = 0;
@@ -118,30 +118,30 @@ int32_t TCPServer::await() {
     
     struct timeval timeoutVal;
     FD_SET(aSockFd, &aFdSet);
-    FD_SET(aSockFd, &eFdSet);
+    //FD_SET(aSockFd, &eFdSet);
     timeoutVal.tv_sec = 0;
     timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
 
-    selectResult = select(aSockFd+1, &aFdSet, nullptr, &eFdSet, &timeoutVal);
+    selectResult = select(aSockFd+1, &aFdSet, nullptr, nullptr, &timeoutVal);
     selectErrno = (int)errno;
     if (selectResult == -1) {
         FD_CLR(aSockFd, &aFdSet);
-        FD_CLR(aSockFd, &eFdSet);
+        //FD_CLR(aSockFd, &eFdSet);
         return (int)(selectErrno * -1);
     }
     if (selectResult == 0) {
         return (int)TSRV_ERR_TIMEOUT;
-    }
+    }/*
     if (FD_ISSET(aSockFd, &eFdSet)) {
         FD_CLR(aSockFd, &aFdSet);
-        FD_CLR(aSockFd, &eFdSet);
+        //FD_CLR(aSockFd, &eFdSet);
         return (int)TSRV_ERR_GENERAL;
-    }
+    }*/
 #ifdef _GNU_SOURCE
     acceptedFd = accept4(sockFd, (struct sockaddr*)&peerAddr, &peerAddrLen, 0|SOCK_NONBLOCK|SOCK_CLOEXEC);
 #else
     acceptedFd = accept(sockFd, (struct sockaddr*)&peerAddr, &peerAddrLen);
-    if (acceptedFd > 0) {
+    if (acceptedFd >= 0) {
 #if defined(_WIN32) || defined(_WIN64)
         u_long ioctlret = 1;
         ioctlsocket(acceptedFd, FIONBIO, &ioctlret);
@@ -157,7 +157,7 @@ int32_t TCPServer::await() {
     acceptErrno = errno;
     if (acceptedFd > 0) {
         getnameinfo((struct sockaddr*)&peerAddr, peerAddrLen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
-        printf("Accepted [%s]:%s\n", hostName, svcName);
+        printf("Accepted [%s]:%s on fd %d\n", hostName, svcName, acceptedFd);
         cList.emplace(cListLength, acceptedFd);
         cListLength++;
         return cListLength - 1;
@@ -171,9 +171,9 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
     }
     int fdNum = 0;
     fd_set sFdSet;
-    fd_set eFdSet;
+    //fd_set eFdSet;
     FD_ZERO(&sFdSet);
-    FD_ZERO(&eFdSet);
+    //FD_ZERO(&eFdSet);
 
     int sendErrno = 0;
     ssize_t sendHeadIndex= 0;
@@ -190,35 +190,36 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
     try {
         fdNum = cList.at(cID);
         FD_SET(fdNum, &sFdSet);
-        FD_SET(fdNum, &eFdSet);
+       //FD_SET(fdNum, &eFdSet);
     } catch (std::exception& e) {
-        printf("Send error: %s\n", e.what());
+        printf("Send error: no corresponding ID ( %s )\n", e.what());
         return TSRV_ERR_GENERAL;
     }
     while ((sendRemain > 0) && !servTerminate) {
         timeoutVal.tv_sec = 0;
         timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
         FD_SET(fdNum, &sFdSet);
-        FD_SET(fdNum, &eFdSet);
+        //FD_SET(fdNum, &eFdSet);
 
-        selectResult = select(fdNum+1, nullptr, &sFdSet, &eFdSet, &timeoutVal);
+        selectResult = select(fdNum+1, nullptr, &sFdSet, nullptr, &timeoutVal);
         selectErrno = errno;
         if (selectResult == -1) {
             FD_CLR(fdNum, &sFdSet);
-            FD_CLR(fdNum, &eFdSet);
+            //FD_CLR(fdNum, &eFdSet);
             try {
                 close(fdNum);
                 cList.erase(cID);
             } catch (std::exception& e) {
                 printf("Client erased: %s\n", e.what());
             }
+            printf("send select error: %zd ( %s )...\n", selectErrno, strerror(selectErrno));
             return (ssize_t)(selectErrno * -1);
         }
         if (selectResult == 0) {
             timeoutCount++;
             if (timeoutCount > timeoutCountMax) {
                 FD_CLR(fdNum, &sFdSet);
-                FD_CLR(fdNum, &eFdSet);
+                //FD_CLR(fdNum, &eFdSet);
                 return TSRV_ERR_TIMEOUT;
             }
         }
@@ -226,18 +227,19 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
         if (sendHeadIndex >= bufLength) {
             break;
         }
+        /*
         if (FD_ISSET(fdNum, &eFdSet)) {
             printf("Select error.\n");
             try {
                 cList.erase(cID);
                 FD_CLR(fdNum, &sFdSet);
-                FD_CLR(fdNum, &eFdSet);
+                //FD_CLR(fdNum, &eFdSet);
                 close(fdNum);
             } catch (std::exception& e) {
                 printf("Client erased: %s\n", e.what());
             }
             return (ssize_t)TSRV_ERR_CONN_CLOSED;
-        }
+        }*/
         if (FD_ISSET(fdNum, &sFdSet)) {
 #if defined(_WIN32) || defined(_WIN64)
             sentLength = send(fdNum, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
@@ -257,7 +259,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                         printf("Send returned %zd\n", sentLength);
                         printf("Send errno: %d (%s) \n", sendErrno, strerror(sendErrno));
                         FD_CLR(fdNum, &sFdSet);
-                        FD_CLR(fdNum, &eFdSet);
+                        //FD_CLR(fdNum, &eFdSet);
                         return (sendErrno * -1);
                 }
             }
@@ -274,9 +276,9 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
 
     int fdNum = 0;
     fd_set rFdSet;
-    fd_set eFdSet;
+    //fd_set eFdSet;
     FD_ZERO(&rFdSet);
-    FD_ZERO(&eFdSet);
+    //FD_ZERO(&eFdSet);
 
     struct timeval timeoutVal;
 
@@ -295,41 +297,48 @@ ssize_t TCPServer::recvFrom(int32_t cID, uint8_t* rBuffer, uint32_t bufLength) {
     timeoutVal.tv_sec = 0;
     timeoutVal.tv_usec = TSRV_TIMEOUT_USEC;
     FD_SET(fdNum, &rFdSet);
-    FD_SET(fdNum, &eFdSet);
-    rfSelectRes = select(fdNum+1, &rFdSet, nullptr, &eFdSet, &timeoutVal);
+    //FD_SET(fdNum, &eFdSet);
+    rfSelectRes = select(fdNum+1, &rFdSet, nullptr, nullptr, &timeoutVal);
     rfselectErrno = (ssize_t)errno;
     if (rfSelectRes == -1) {
+        perror("debug");
+        printf("recv error: %d ( %s )...\n", fdNum, strerror(rfselectErrno));
         FD_CLR(fdNum, &rFdSet);
-        FD_CLR(fdNum, &eFdSet);
+        //FD_CLR(fdNum, &eFdSet);
         close(fdNum);
+        cList.erase(cID);
         return (ssize_t)(rfselectErrno * -1);
     }
     if (rfSelectRes == 0) {
         FD_CLR(fdNum, &rFdSet);
-        FD_CLR(fdNum, &eFdSet);
+        //FD_CLR(fdNum, &eFdSet);
         return (ssize_t)TSRV_ERR_TIMEOUT;
-    }
+    }/*
     if (FD_ISSET(fdNum, &eFdSet)) {
         FD_CLR(fdNum, &rFdSet);
-        FD_CLR(fdNum, &eFdSet);
+        //FD_CLR(fdNum, &eFdSet);
         close(fdNum);
         return (ssize_t)TSRV_ERR_GENERAL;
-    }
+    }*/
     if (FD_ISSET(fdNum, &rFdSet)) {
 #if defined(_WIN32) || defined(_WIN64)
-        rfBytesLength = recvfrom(fdNum, (char*)rBuffer, bufLength, 0, nullptr, 0);
+        //rfBytesLength = recvfrom(fdNum, (char*)rBuffer, bufLength, 0, nullptr, 0);
+        rfBytesLength = recv(fdNum, (char*)rBuffer, bufLength, 0);
 #else
-        rfBytesLength = recvfrom(fdNum, rBuffer, bufLength, 0, nullptr, 0);
+        //rfBytesLength = recvfrom(fdNum, rBuffer, bufLength, 0, nullptr, 0);
+        rfBytesLength = recv(fdNum, rBuffer, bufLength, 0);
 #endif
         rfErrno = errno;
         if (rfBytesLength < 0) {
             FD_CLR(fdNum, &rFdSet);
-            FD_CLR(fdNum, &eFdSet);
+            //FD_CLR(fdNum, &eFdSet);
             close(fdNum);
+            cList.erase(cID);
             return -1*rfErrno;
         }
         return rfBytesLength;
     }
     close(fdNum);
+    cList.erase(cID);
     return TSRV_ERR_GENERAL;
 }
