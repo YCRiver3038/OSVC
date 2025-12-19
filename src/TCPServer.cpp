@@ -132,9 +132,6 @@ int32_t TCPServer::await() {
     if (selectResult == 0) {
         return (int)TSRV_ERR_TIMEOUT;
     }
-    //if (FD_ISSET(aSockFd, &eFdSet)) {
-    //    return (int)TSRV_ERR_CONN_CLOSED;
-    //}
     if (FD_ISSET(aSockFd, &eFdSet)) {
         FD_CLR(aSockFd, &aFdSet);
         FD_CLR(aSockFd, &eFdSet);
@@ -153,7 +150,7 @@ int32_t TCPServer::await() {
 #endif
 #ifdef SO_NOSIGPIPE
         int opt = 1;
-        setsockopt(sockFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+        setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
 #endif
     }
 #endif
@@ -225,7 +222,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                 return TSRV_ERR_TIMEOUT;
             }
         }
-        //printf("Sending to %d...\n", fdNum);
+        printf("Sending to %d...\n", fdNum);
         if (sendHeadIndex >= bufLength) {
             break;
         }
@@ -249,7 +246,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
 #endif
             sendErrno = errno;
             if (sentLength > 0) {
-                //printf("OK\n");
+                printf("OK\n");
                 sendHeadIndex += sentLength;
                 sendRemain -= sentLength;
             } else {
@@ -265,7 +262,7 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                 }
             }
         }
-        //printf("Send remain: %zd\n", sendRemain);
+        printf("Send remain: %zd\n", sendRemain);
     }
     return sendHeadIndex;
 }
