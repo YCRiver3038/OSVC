@@ -60,19 +60,19 @@ TCPServer::TCPServer(std::string bindAddr, std::string bindPort) {
                 int fcerr = 0;
                 oldFlag = fcntl(sockFd, F_GETFL);
                 fcerr = errno;
-                //printf("fcntl: %d, oldflag: %d\n", fcerr, oldFlag);
                 if (oldFlag != -1) {
                     fcntl(sockFd, F_SETFL, oldFlag|O_NONBLOCK); // ノンブロッキング化
                     fcerr = errno;
+                } else {
+                    printf("TCPServer: fcntl returned -1: cannot set nonblock option\n");
                 }
-                //printf("fcntl: %d, newflag: %d\n", fcerr, oldFlag|O_NONBLOCK);
-                //fcntl(sockFd, F_SETFL, O_NONBLOCK);
 #endif
-                int opt = 1;
 #ifdef SO_NOSIGPIPE
-                setsockopt(sockFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
+                sockOptValue = 1;
+                setsockopt(sockFd, SOL_SOCKET, SO_NOSIGPIPE, &sockOptValue, sizeof(sockOptValue));
 #endif
-                setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+                sockOptValue = 1;
+                setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, &sockOptValue, sizeof(sockOptValue));
                 aSockFd = sockFd;
                 getnameinfo(diRef->ai_addr, diRef->ai_addrlen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
                 printf("Bound on [%s]:%s, ", hostName, svcName);
@@ -151,16 +151,19 @@ int32_t TCPServer::await() {
         int fcerr = 0;
         oldFlag = fcntl(acceptedFd, F_GETFL);
         fcerr = errno;
-        perror("debug");
-        printf("fcntl: %d, oldflag: %d\n", fcerr, oldFlag);
         if (oldFlag != -1) {
             fcntl(acceptedFd, F_SETFL, oldFlag|O_NONBLOCK); // ノンブロッキング化
             fcerr = errno;
+        } else {
+            printf("TCPServer::await() : fcntl returned -1: cannot set nonblock option\n");
         }
-        printf("fcntl: %d, newflag: %d\n", fcerr, oldFlag|O_NONBLOCK);
 #endif
 #ifdef SO_NOSIGPIPE
-        int opt = 1;
+#if defined(_WIN32) || defined(_WIN64)
+                char opt = 1;
+#else
+                int opt = 1;
+#endif
         setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
 #endif
     }
@@ -250,7 +253,6 @@ ssize_t TCPServer::sendTo(int32_t cID, uint8_t* sBuffer, uint32_t bufLength) {
                         printf("Send returned %zd\n", sentLength);
                         printf("Send errno: %d (%s) \n", sendErrno, strerror(sendErrno));
                         FD_CLR(fdNum, &sFdSet);
-                        //FD_CLR(fdNum, &eFdSet);
                         return (sendErrno * -1);
                 }
             }

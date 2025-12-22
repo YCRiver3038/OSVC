@@ -54,15 +54,18 @@ UDPServer::UDPServer(std::string bindAddr, std::string bindPort) {
                 int fcerr = 0;
                 oldFlag = fcntl(sockFd, F_GETFL);
                 fcerr = errno;
-                //printf("fcntl: %d, oldflag: %d\n", fcerr, oldFlag);
                 if (oldFlag != -1) {
                     fcntl(sockFd, F_SETFL, oldFlag|O_NONBLOCK); // ノンブロッキング化
                     fcerr = errno;
+                } else {
+                    printf("UDPServer: fcntl returned -1: cannot set nonblock option\n");
                 }
-                //printf("fcntl: %d, newflag: %d\n", fcerr, oldFlag|O_NONBLOCK);
-                //fcntl(sockFd, F_SETFL, O_NONBLOCK);
 #endif
+#if defined(_WIN32) || defined(_WIN64)
+                char opt = 1;
+#else
                 int opt = 1;
+#endif
 #ifdef SO_NOSIGPIPE
                 setsockopt(sockFd, SOL_SOCKET, SO_NOSIGPIPE, &opt, sizeof(opt));
 #endif
