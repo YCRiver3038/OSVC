@@ -56,7 +56,7 @@
 #define TCLI_ERR_CONN_CLOSED -1025
 #define TCLI_ERR_GENERAL -2048
 
-extern volatile bool servTerminate;
+extern volatile bool tcliTerminate;
 
 class TCPClient {
     private:

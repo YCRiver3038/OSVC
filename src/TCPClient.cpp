@@ -1,6 +1,6 @@
 #include "TCPClient.hpp"
 
-volatile bool servTerminate = false;
+volatile bool tcliTerminate = false;
 const int timeoutCountMax = 10;
 
 TCPClient::TCPClient(std::string conAddr, std::string conPort) {
@@ -31,7 +31,7 @@ TCPClient::TCPClient(std::string conAddr, std::string conPort) {
         return;
     }
     for (struct addrinfo* diRef = destInfo; diRef != nullptr; diRef = diRef->ai_next) {
-        if (servTerminate) {
+        if (tcliTerminate) {
             break;
         }
         sockFd = socket(diRef->ai_family, diRef->ai_socktype, 0);
@@ -119,7 +119,7 @@ ssize_t TCPClient::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
     sendRemain = bufLength;
     fdNum = sockFd;
     FD_SET(fdNum, &sFdSet);
-    while ((sendRemain > 0) && !servTerminate) {
+    while ((sendRemain > 0) && !tcliTerminate) {
         timeoutVal.tv_sec = 0;
         timeoutVal.tv_usec = TCLI_TIMEOUT_USEC;
         FD_SET(fdNum, &sFdSet);

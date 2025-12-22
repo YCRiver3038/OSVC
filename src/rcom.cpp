@@ -9,13 +9,13 @@
 
 #include "math.h"
 
-//#include "network.hpp"
 #include "TCPClient.hpp"
 #include "remocon.h"
 
 std::atomic<bool> KeyboardInterrupt;
 void kbiHandler(int signo) {
     KeyboardInterrupt.store(true);
+    tcliTerminate = true;
 }
 
 void rcvthr(TCPClient& rc) {
