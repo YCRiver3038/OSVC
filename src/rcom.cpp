@@ -23,7 +23,7 @@ void rcvthr(TCPClient& rc) {
     ssize_t rcStatus = 0;
     trdtype rdata;
     while (!KeyboardInterrupt.load()) {
-        memset(rbuf, 1024, sizeof(uint8_t));
+        memset(rbuf, 0, 1024);
         rcStatus = rc.recvFrom(rbuf, 1024);
         if (rcStatus < 0) {
             if (rcStatus != TCLI_ERR_TIMEOUT) {
