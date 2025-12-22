@@ -1,9 +1,9 @@
-#include "TCPClient.hpp"
+#include "UDPClient.hpp"
 
-volatile bool tcliTerminate = false;
+volatile bool ucliTerminate = false;
 const int timeoutCountMax = 10;
 
-TCPClient::TCPClient(std::string conAddr, std::string conPort) {
+UDPClient::UDPClient(std::string conAddr, std::string conPort) {
     int retErrno = 0;
     int conStatus = 0;
     char hostName[256] = {};
@@ -21,9 +21,9 @@ TCPClient::TCPClient(std::string conAddr, std::string conPort) {
     int sockOptValue = 1;
 #endif
 
-    addrInfoHint.ai_protocol = IPPROTO_TCP;
+    addrInfoHint.ai_protocol = IPPROTO_UDP;
     addrInfoHint.ai_family = PF_UNSPEC;
-    addrInfoHint.ai_socktype = SOCK_STREAM;
+    addrInfoHint.ai_socktype = SOCK_DGRAM;
     addrInfoHint.ai_flags = addrInfoHint.ai_flags;
     getaddrinfo(conAddr.c_str(), conPort.c_str(), &addrInfoHint, &destInfo);
 
@@ -31,7 +31,7 @@ TCPClient::TCPClient(std::string conAddr, std::string conPort) {
         return;
     }
     for (struct addrinfo* diRef = destInfo; diRef != nullptr; diRef = diRef->ai_next) {
-        if (tcliTerminate) {
+        if (ucliTerminate) {
             break;
         }
         sockFd = socket(diRef->ai_family, diRef->ai_socktype, 0);
@@ -53,7 +53,7 @@ TCPClient::TCPClient(std::string conAddr, std::string conPort) {
                     fcntl(sockFd, F_SETFL, oldFlag|O_NONBLOCK); // ノンブロッキング化
                     fcerr = errno;
                 } else {
-                    printf("TCPClient: fcntl returned -1: cannot set nonblock option\n");
+                    printf("UDPClient: fcntl returned -1: cannot set nonblock option\n");
                 }
 #endif
 #ifdef SO_NOSIGPIPE
@@ -79,7 +79,7 @@ TCPClient::TCPClient(std::string conAddr, std::string conPort) {
     return;
 }
 
-TCPClient::~TCPClient() {
+UDPClient::~UDPClient() {
     if (connected) {
         close(sockFd);
     }
@@ -93,15 +93,74 @@ TCPClient::~TCPClient() {
 #endif
 }
 
-bool TCPClient::isConnected() {
+bool UDPClient::isConnected() {
     return connected;
 }
 
-ssize_t TCPClient::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
-    if (sBuffer == nullptr) {
-        return (ssize_t)TCLI_ERR_GENERAL;
+ssize_t UDPClient::retryConnect() {
+    int retErrno = 0;
+    int conStatus = 0;
+    char hostName[256] = {};
+    char svcName[32] = {};
+#if defined(_WIN32) || defined(_WIN64)
+    char sockOptValue = 1;
+#else
+    int sockOptValue = 1;
+#endif
+    for (struct addrinfo* diRef = destInfo; diRef != nullptr; diRef = diRef->ai_next) { 
+        if (ucliTerminate) {
+            break;
+        }
+        sockFd = socket(diRef->ai_family, diRef->ai_socktype, 0);
+        retErrno = errno;
+        if (sockFd != -1) {
+            conStatus = connect(sockFd, diRef->ai_addr, diRef->ai_addrlen);
+            retErrno = errno;
+            if (conStatus == 0) {
+                connected = true;
+#if defined(_WIN32) || defined(_WIN64)
+                u_long ioctlret = 1;
+                ioctlsocket(sockFd, FIONBIO, &ioctlret);
+#else
+                int oldFlag = 0;
+                int fcerr = 0;
+                oldFlag = fcntl(sockFd, F_GETFL);
+                fcerr = errno;
+                if (oldFlag != -1) {
+                    fcntl(sockFd, F_SETFL, oldFlag|O_NONBLOCK); // ノンブロッキング化
+                    fcerr = errno;
+                } else {
+                    printf("UDPClient: fcntl returned -1: cannot set nonblock option\n");
+                }
+#endif
+#ifdef SO_NOSIGPIPE
+                sockOptValue = 1;
+                setsockopt(sockFd, SOL_SOCKET, SO_NOSIGPIPE, &sockOptValue, sizeof(sockOptValue));
+#endif
+                sockOptValue = 1;
+                setsockopt(sockFd, SOL_SOCKET, SO_REUSEADDR, &sockOptValue, sizeof(sockOptValue));
+                getnameinfo(diRef->ai_addr, diRef->ai_addrlen, hostName, 256, svcName, 32, 0|NI_NUMERICHOST|NI_NUMERICSERV);
+                printf("Connected  to [%s]:%s, ", hostName, svcName);
+                printf("Proto: %s, Type: %s, Family: %s\n", (diRef->ai_protocol == IPPROTO_TCP) ? "TCP" :
+                                                            (diRef->ai_protocol == IPPROTO_UDP) ? "UDP" :
+                                                            "Other"
+                                                          , (diRef->ai_socktype == SOCK_STREAM) ? "STREAM" :
+                                                            (diRef->ai_socktype == SOCK_DGRAM)  ? "DGRAM" :
+                                                            "Other"
+                                                          , (diRef->ai_family == PF_INET) ? "IPv4" :
+                                                            (diRef->ai_family == PF_INET6) ? "IPv6" : "Other");
+                return 0;
+            }
+        }
     }
-    int fdNum = 0;
+    return -1 * retErrno;
+}
+
+ssize_t UDPClient::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
+    if (sBuffer == nullptr) {
+        return (ssize_t)UCLI_ERR_GENERAL;
+    }
+
     fd_set sFdSet;
     FD_ZERO(&sFdSet);
 
@@ -117,36 +176,36 @@ ssize_t TCPClient::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
 
     sendHeadIndex = 0;
     sendRemain = bufLength;
-    fdNum = sockFd;
-    FD_SET(fdNum, &sFdSet);
-    while ((sendRemain > 0) && !tcliTerminate) {
+
+    FD_SET(sockFd, &sFdSet);
+    while ((sendRemain > 0) && !ucliTerminate) {
         timeoutVal.tv_sec = 0;
-        timeoutVal.tv_usec = TCLI_TIMEOUT_USEC;
-        FD_SET(fdNum, &sFdSet);
-        selectResult = select(fdNum+1, nullptr, &sFdSet, nullptr, &timeoutVal);
+        timeoutVal.tv_usec = UCLI_TIMEOUT_USEC;
+        FD_SET(sockFd, &sFdSet);
+        selectResult = select(sockFd+1, nullptr, &sFdSet, nullptr, &timeoutVal);
         selectErrno = errno;
         if (selectResult == -1) {
-            FD_CLR(fdNum, &sFdSet);
-            close(fdNum);
+            FD_CLR(sockFd, &sFdSet);
+            close(sockFd);
             printf("send select error: %zd ( %s )...\n", selectErrno, strerror(selectErrno));
             return (ssize_t)(selectErrno * -1);
         }
         if (selectResult == 0) {
             timeoutCount++;
             if (timeoutCount > timeoutCountMax) {
-                FD_CLR(fdNum, &sFdSet);
-                return TCLI_ERR_TIMEOUT;
+                FD_CLR(sockFd, &sFdSet);
+                return UCLI_ERR_TIMEOUT;
             }
         }
-        //printf("Sending to %d...\n", fdNum);
+        //printf("Sending to %d...\n", sockFd);
         if (sendHeadIndex >= bufLength) {
             break;
         }
-        if (FD_ISSET(fdNum, &sFdSet)) {
+        if (FD_ISSET(sockFd, &sFdSet)) {
 #if defined(_WIN32) || defined(_WIN64)
-            sentLength = send(fdNum, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
+            sentLength = send(sockFd, (char*)&(sBuffer[sendHeadIndex]), sendRemain, 0);
 #else
-            sentLength = send(fdNum, &(sBuffer[sendHeadIndex]), sendRemain, 0);
+            sentLength = send(sockFd, &(sBuffer[sendHeadIndex]), sendRemain, 0);
 #endif
             sendErrno = errno;
             if (sentLength > 0) {
@@ -160,7 +219,7 @@ ssize_t TCPClient::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
                     default:
                         printf("Send returned %zd\n", sentLength);
                         printf("Send errno: %d (%s) \n", sendErrno, strerror(sendErrno));
-                        FD_CLR(fdNum, &sFdSet);
+                        FD_CLR(sockFd, &sFdSet);
                         return (sendErrno * -1);
                 }
             }
@@ -170,12 +229,11 @@ ssize_t TCPClient::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
     return sendHeadIndex;
 }
 
-ssize_t TCPClient::recvFrom(uint8_t* rBuffer, uint32_t bufLength) {
-if (!rBuffer) {
-        return TCLI_ERR_GENERAL;
+ssize_t UDPClient::recvFrom(uint8_t* rBuffer, uint32_t bufLength) {
+    if (!rBuffer) {
+        return UCLI_ERR_GENERAL;
     }
 
-    int fdNum = 0;
     fd_set rFdSet;
     FD_ZERO(&rFdSet);
 
@@ -186,37 +244,36 @@ if (!rBuffer) {
     int rfSelectRes = 0;
     int rfErrno = 0;
 
-    fdNum = sockFd;
     timeoutVal.tv_sec = 0;
-    timeoutVal.tv_usec = TCLI_TIMEOUT_USEC;
-    FD_SET(fdNum, &rFdSet);
-    rfSelectRes = select(fdNum+1, &rFdSet, nullptr, nullptr, &timeoutVal);
+    timeoutVal.tv_usec = UCLI_TIMEOUT_USEC;
+    FD_SET(sockFd, &rFdSet);
+    rfSelectRes = select(sockFd+1, &rFdSet, nullptr, nullptr, &timeoutVal);
     rfselectErrno = (ssize_t)errno;
     if (rfSelectRes == -1) {
         perror("debug");
-        printf("recv error: %d ( %s )...\n", fdNum, strerror(rfselectErrno));
-        FD_CLR(fdNum, &rFdSet);
-        close(fdNum);
+        printf("recv error: %d ( %s )...\n", sockFd, strerror(rfselectErrno));
+        FD_CLR(sockFd, &rFdSet);
+        close(sockFd);
         return (ssize_t)(rfselectErrno * -1);
     }
     if (rfSelectRes == 0) {
-        FD_CLR(fdNum, &rFdSet);
-        return (ssize_t)TCLI_ERR_TIMEOUT;
+        FD_CLR(sockFd, &rFdSet);
+        return (ssize_t)UCLI_ERR_TIMEOUT;
     }
-    if (FD_ISSET(fdNum, &rFdSet)) {
+    if (FD_ISSET(sockFd, &rFdSet)) {
 #if defined(_WIN32) || defined(_WIN64)
-        rfBytesLength = recv(fdNum, (char*)rBuffer, bufLength, 0);
+        rfBytesLength = recv(sockFd, (char*)rBuffer, bufLength, 0);
 #else
-        rfBytesLength = recv(fdNum, rBuffer, bufLength, 0);
+        rfBytesLength = recv(sockFd, rBuffer, bufLength, 0);
 #endif
         rfErrno = errno;
         if (rfBytesLength < 0) {
-            FD_CLR(fdNum, &rFdSet);
-            close(fdNum);
+            FD_CLR(sockFd, &rFdSet);
+            close(sockFd);
             return -1*rfErrno;
         }
         return rfBytesLength;
     }
-    close(fdNum);
-    return TCLI_ERR_GENERAL;
+    close(sockFd);
+    return UCLI_ERR_GENERAL;
 }

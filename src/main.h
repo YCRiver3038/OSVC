@@ -20,9 +20,10 @@
 #include "rubberband/RubberBandStretcher.h"
 //#include "nlohmann/json.hpp"
 
-#include "network.hpp"
+//#include "network.hpp"
 #include "TCPServer.hpp"
 #include "UDPServer.hpp"
+#include "UDPClient.hpp"
 #include "remocon.h"
 #include "AudioManipulator.hpp"
 

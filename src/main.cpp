@@ -3,6 +3,9 @@
 std::atomic<bool> KeyboardInterrupt;
 void kbiHandler(int signo) {
     KeyboardInterrupt.store(true);
+    servTerminate = true;
+    uServTerminate = true;
+    ucliTerminate = true;
 }
 
 template <typename FDTYPE, typename MDTYPE>
@@ -971,13 +974,14 @@ int main(int argc, char* argv[]) {
     RubberBand::RubberBandStretcher* rbst1 = nullptr;
     rbst1 = new RubberBand::RubberBandStretcher((size_t)ioFs, ioChannel, rbOptions);
 
-    network stNW(stDestAddr, stDestPort, SOCK_DGRAM);
+    //network stNW(stDestAddr, stDestPort, SOCK_DGRAM);
+    UDPClient stNW(stDestAddr, stDestPort);
     bool stConnected = false;
     
     if (streamEnabled) {
-        if (stNW.nw_connect() == 0) {
+        if (stNW.isConnected()) {
             stConnected = true;
-            printf("Audio output: connected to [%s]:%s\n", stDestAddr.c_str(), stDestPort.c_str());
+            //printf("Audio output: connected to [%s]:%s\n", stDestAddr.c_str(), stDestPort.c_str());
         }
     }
 
@@ -1011,9 +1015,9 @@ int main(int argc, char* argv[]) {
     while (!KeyboardInterrupt.load()) {
         nanosleep(&sleepTime, nullptr);
         if (!stConnected && tcRetryReq.load() && streamEnabled) {
-            if (stNW.nw_connect() == 0) {
+            if (stNW.retryConnect() == 0) {
                 stConnected = true;
-                printf("Audio output: connected to [%s]:%s\n", stDestAddr.c_str(), stDestPort.c_str());
+                //printf("Audio output: connected to [%s]:%s\n", stDestAddr.c_str(), stDestPort.c_str());
             }
         }
         if (aIn){
@@ -1113,7 +1117,7 @@ int main(int argc, char* argv[]) {
                 aOut->write(tdarr, ioChunkLength);
             }
             if (stConnected && streamEnabled) {
-                stNW.send_data((uint8_t*)&(tdarr[0].f32), ioChunkLength*ioChannel*sizeof(float));
+                stNW.sendTo((uint8_t*)&(tdarr[0].f32), ioChunkLength*ioChannel*sizeof(float));
             }
             // output peak level detect
             for (uint32_t ctr = 0; ctr < (ioChunkLength*ioChannel); ctr++) {

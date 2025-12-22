@@ -155,7 +155,7 @@ ssize_t UDPServer::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
                 return USRV_ERR_TIMEOUT;
             }
         }
-        printf("Sending to %d...\n", fdNum);
+        //printf("Sending to %d...\n", fdNum);
         if (sendHeadIndex >= bufLength) {
             break;
         }
@@ -167,7 +167,7 @@ ssize_t UDPServer::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
 #endif
             sendErrno = errno;
             if (sentLength > 0) {
-                printf("OK\n");
+                //printf("OK\n");
                 sendHeadIndex += sentLength;
                 sendRemain -= sentLength;
             } else {
@@ -182,7 +182,7 @@ ssize_t UDPServer::sendTo(uint8_t* sBuffer, uint32_t bufLength) {
                 }
             }
         }
-        printf("Send remain: %zd\n", sendRemain);
+        //printf("Send remain: %zd\n", sendRemain);
     }
     return sendHeadIndex;
 }

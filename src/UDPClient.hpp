@@ -1,5 +1,5 @@
-#ifndef TCPCLIENT_H_INCLUDED
-#define TCPCLIENT_H_INCLUDED
+#ifndef UDPClient_H_INCLUDED
+#define UDPClient_H_INCLUDED
 
 
 #include <string>
@@ -49,16 +49,16 @@
 #include <sys/socket.h>
 #endif
 
-#define TCLI_TIMEOUT_MSEC 1000
-#define TCLI_TIMEOUT_SEC 1
-#define TCLI_TIMEOUT_USEC 500000
-#define TCLI_ERR_TIMEOUT -1024
-#define TCLI_ERR_CONN_CLOSED -1025
-#define TCLI_ERR_GENERAL -2048
+#define UCLI_TIMEOUT_MSEC 1000
+#define UCLI_TIMEOUT_SEC 1
+#define UCLI_TIMEOUT_USEC 500000
+#define UCLI_ERR_TIMEOUT -1024
+#define UCLI_ERR_CONN_CLOSED -1025
+#define UCLI_ERR_GENERAL -2048
 
-extern volatile bool tcliTerminate;
+extern volatile bool ucliTerminate;
 
-class TCPClient {
+class UDPClient {
     private:
 #if defined(_WIN32) || defined(_WIN64)
         WORD wVersionRequested;
@@ -73,11 +73,12 @@ class TCPClient {
         bool connected = false;
 
     public:
-        TCPClient(std::string conAddr, std::string conPort);
-        ~TCPClient();
+        UDPClient(std::string conAddr, std::string conPort);
+        ~UDPClient();
         bool isConnected();
         ssize_t sendTo(uint8_t* sBuffer, uint32_t bufLength);
         ssize_t recvFrom(uint8_t* rBuffer, uint32_t bufLength);
+        ssize_t retryConnect();
 };
 
 #endif
