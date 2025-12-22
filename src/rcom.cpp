@@ -9,7 +9,8 @@
 
 #include "math.h"
 
-#include "network.hpp"
+//#include "network.hpp"
+#include "TCPClient.hpp"
 #include "remocon.h"
 
 std::atomic<bool> KeyboardInterrupt;
@@ -17,20 +18,17 @@ void kbiHandler(int signo) {
     KeyboardInterrupt.store(true);
 }
 
-void rcvthr(network& rc) {
+void rcvthr(TCPClient& rc) {
     uint8_t rbuf[1024] = {};
     ssize_t rcStatus = 0;
-    std::string statstr;
     trdtype rdata;
     while (!KeyboardInterrupt.load()) {
-        memset(rbuf, 0, 1024);
-        rcStatus = rc.recv_data(rbuf, 1024);
+        memset(rbuf, 1024, sizeof(uint8_t));
+        rcStatus = rc.recvFrom(rbuf, 1024);
         if (rcStatus < 0) {
-            if (rcStatus != EM_CONNECTION_TIMEDOUT) {
-                rc.errno_to_string(rcStatus, statstr);
-                printf("\nrecv status: %s ( %zd )\n", statstr.c_str(), rcStatus);
-                rc.nw_close();
-                KeyboardInterrupt.store(true);
+            if (rcStatus != TCLI_ERR_TIMEOUT) {
+                printf("\nrecv status: %zd\n", rcStatus);
+                KeyboardInterrupt.load();
                 break;
             }
             continue;
@@ -39,11 +37,6 @@ void rcvthr(network& rc) {
             printf("Disconnected from server.\n");
             break;
         }
-        //printf("Received:\n\x1b[0k");
-        //for (ssize_t rdctr = 0; rdctr < rcStatus; rdctr++) {
-        //    printf("%02X ", rbuf[rdctr]);
-        //}
-        //printf("\n");
         for (ssize_t rdctr = 0; rdctr < rcStatus;) {
             switch (rbuf[rdctr]) {
                 case SRV_MSG:
@@ -171,7 +164,7 @@ int main(int argc, char* argv[]) {
     } while (getoptStatus != -1);
 
     printf("Set addr: %s, port: %s\n", conAddr.c_str(), conPort.c_str());
-    network con1(conAddr, conPort);
+    TCPClient con1(conAddr, conPort);
     std::string conErrorText;
     conErrorText.clear();
 
@@ -179,12 +172,9 @@ int main(int argc, char* argv[]) {
     char destPort[16] = {};
     int getAddrStatus = 0;
     int conStatus = 0;
-    conStatus = con1.nw_connect(true);
-    getAddrStatus = con1.get_connection_addr(destAddr, 1024, destPort, 16);
-
-    printf("Address: %s, port: %s\n", destAddr, destPort);
-    if (conStatus != 0) {
-        printf("Connect error: %d (%s)\n", conStatus, strerror(-1*conStatus));
+    conStatus = con1.isConnected();
+    if (!conStatus) {
+        printf("Connect failed");
         return -1;
     }
 
@@ -212,12 +202,10 @@ int main(int argc, char* argv[]) {
             printf("\nEOF\n");
             break;
         }
-        //printf("input: %s\n", command.c_str());
         for (size_t ctrc=0; ctrc<command.length(); ctrc++) {
             command.at(ctrc) = std::tolower(command.at(ctrc));
         }
         if (command == "q") {
-            con1.nw_close();
             KeyboardInterrupt.store(true);
             continue;
         }
@@ -233,7 +221,7 @@ int main(int argc, char* argv[]) {
             tdata.f32 = rbPitchScale;
             tbuf[0] = SET_PITCH;
             memcpy(&(tbuf[1]), tdata.u8, 4);
-            con1.send_data(tbuf, 5);
+            con1.sendTo(tbuf, 5);
             continue;
         }
         if (command == "f") {
@@ -248,7 +236,7 @@ int main(int argc, char* argv[]) {
             tdata.f32 = rbFormantScale;
             tbuf[0] = SET_FORMANT;
             memcpy(&(tbuf[1]), tdata.u8, 4);
-            con1.send_data(tbuf, 5);
+            con1.sendTo(tbuf, 5);
             continue;
         }
         if (command == "t") {
@@ -263,7 +251,7 @@ int main(int argc, char* argv[]) {
             tdata.f32 = rbTimeRatio;
             tbuf[0] = SET_TR;
             memcpy(&(tbuf[1]), tdata.u8, 4);
-            con1.send_data(tbuf, 5);
+            con1.sendTo(tbuf, 5);
             continue;
         }
         if (command == "ov") {
@@ -278,7 +266,7 @@ int main(int argc, char* argv[]) {
             tdata.f32 = oVol;
             tbuf[0] = SET_OUTPUT_VOLUME;
             memcpy(&(tbuf[1]), tdata.u8, 4);
-            con1.send_data(tbuf, 5);
+            con1.sendTo(tbuf, 5);
             continue;
         }
         if (command == "ovd") {
@@ -294,74 +282,73 @@ int main(int argc, char* argv[]) {
             tdata.f32 = oVol;
             tbuf[0] = SET_OUTPUT_VOLUME;
             memcpy(&(tbuf[1]), tdata.u8, 4);
-            con1.send_data(tbuf, 5);
+            con1.sendTo(tbuf, 5);
             continue;
         }
         if (command == "tpf") { // pitch follows time scale
             tbuf[0] = SET_TR_PITCH_FOLLOW;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "tpc") { // pitch won't follow time scale
             tbuf[0] = SET_TR_PITCH_CONSTANT;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "qp") {
             tbuf[0] = QUERY_PITCH;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "qf") {
             tbuf[0] = QUERY_FORMANT;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "qt") {
             tbuf[0] = QUERY_TR;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "qip") {
             tbuf[0] = QUERY_INPUT_LEVEL_DB;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "qop") {
             tbuf[0] = QUERY_OUTPUT_LEVEL_DB;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "qov") {
             tbuf[0] = QUERY_OUTPUT_VOLUME;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "qlm") {
             tbuf[0] = QUERY_LATENCY_MSEC;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "qls") {
             tbuf[0] = QUERY_LATENCY_SAMPLES;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "thru") {
             tbuf[0] = MODE_THRU;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         if (command == "proc") {
             tbuf[0] = MODE_PROCESSED;
-            con1.send_data(tbuf, 1);
+            con1.sendTo(tbuf, 1);
             continue;
         }
         printf("Invalid command: %s\n", command.c_str());
         printf("     > ");
         command.clear();
     }
-    con1.nw_close();
     rcv.join();
     return 0;
 }
