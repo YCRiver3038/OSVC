@@ -26,12 +26,17 @@ class Plotter:
         self.fsample = fs
 
     def set_window_function(self, idx: int=0):
-        self.window_function = windowfuncs.DChebWindow(self.window_len)
+        self.window_function = windowfuncs.PowSineWindow(self.window_len, 3)
         self.window_function = self.window_function / np.mean(self.window_function)
 
     def thr_plot(self):
         #label_dc.setText("DC Component: %5.1f[dB]" % (data_to_plot[0]))
-        p_data = self.plot_data_queue.get()
+        try:
+            p_data = self.plot_data_queue.get(block=False)
+        except Exception:
+            p_data = None
+        if p_data is None:
+            return
         if self.window_len != len(p_data[0]) :
             self.window_len = len(p_data[0])
             self.set_window_function()
@@ -49,10 +54,10 @@ class Plotter:
 
     def thr_plot_execute(self, fps=30):
         g_app = pyqtgraph.mkQApp()
-        self.wf_L_graph = pyqtgraph.GraphicsLayoutWidget(title="L_ch")
-        self.wf_R_graph  = pyqtgraph.GraphicsLayoutWidget(title="R_ch")
-        self.L_plot = self.wf_L_graph.addPlot(row=1, col=0)
-        self.R_plot = self.wf_R_graph.addPlot(row=1, col=0)
+        self.wf_L_graph = pyqtgraph.GraphicsLayoutWidget(title="Channels")
+        #self.wf_R_graph  = pyqtgraph.GraphicsLayoutWidget(title="R_ch")
+        self.L_plot = self.wf_L_graph.addPlot(row=0, col=0)
+        self.R_plot = self.wf_L_graph.addPlot(row=0, col=1)
         self.L_curve = self.L_plot.plot(
             symbol=None, symbolBrush=None, symbolPen=None, pen=(0, 255, 0))
         self.R_curve = self.R_plot.plot(
@@ -69,5 +74,5 @@ class Plotter:
         plot_timer.timeout.connect(self.thr_plot)
         plot_timer.start(int(1000/fps))
         self.wf_L_graph.show()
-        self.wf_R_graph.show()
+        #self.wf_R_graph.show()
         g_app.exec()
