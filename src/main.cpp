@@ -519,7 +519,34 @@ std::atomic<bool> tc1msecReq;
 std::atomic<bool> tcRefreshReq;
 std::atomic<bool> tcRetryReq;
 
-void timeCounter(int refreshTiming) {
+#if defined(_WIN32) || defined(_WIN64)
+void timeCounter(suseconds_t refreshTiming) {
+    const DWORD tcShortestMsec = 1;
+    DWORD tElapsed1 = 0;
+    DWORD tElapsedRf = 0;
+    DWORD tElapsedRt = 0;
+
+    while (!KeyboardInterrupt.load()) {
+        if (tElapsed1 >= 1) { //1msec
+            tc1msecReq.store(true);
+            tElapsed1 = 0;
+        }
+        if (tElapsedRf >= (long)(refreshTiming/1000)) {
+            tcRefreshReq.store(true);
+            tElapsedRf = 0;
+        }
+        if (tElapsedRt >= 100) {
+            tcRetryReq.store(true);
+            tElapsedRt = 0;
+        }
+        Sleep(tcShortestMsec);
+        tElapsed1 += tcShortestMsec;
+        tElapsedRf += tcShortestMsec;
+        tElapsedRt += tcShortestMsec;
+    }
+}
+#else
+void timeCounter(suseconds_t refreshTiming) {
     const suseconds_t tcShortestUsec = 1000;
     struct timeval selts = {};
     suseconds_t tElapsed1 = 0;
@@ -547,7 +574,7 @@ void timeCounter(int refreshTiming) {
         tElapsedRt += tcShortestUsec;
     }
 }
-
+#endif
 void rAudioRxThr(ring_buffer<float>* rbAudioIn,
                  std::string rAddr, std::string rPort,
                  bool execute) {
@@ -921,19 +948,6 @@ int main(int argc, char* argv[]) {
         }
     } while (getoptStatus != -1);
 
-#if defined(_WIN32) || defined(_WIN64)
-    WORD wVersionRequested;
-    WSADATA wsaData;
-    int wInitStatus = 0;
-    char sockOptValue = 1;
-    wVersionRequested = MAKEWORD(2, 2);
-    wInitStatus = WSAStartup(wVersionRequested, &wsaData);
-    if (wInitStatus != 0) {
-        printf("WSASetup error: %d\n", wInitStatus);
-        return -1;
-    }
-#endif
-
     if (!nwEnabled) {
         loComEnabled = true;
     }
@@ -1038,9 +1052,13 @@ int main(int argc, char* argv[]) {
 
     printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     while (!KeyboardInterrupt.load()) {
+#if defined(_WIN32) || defined(_WIN64)
+        Sleep(mSleepTime.tv_usec/1000);
+#else
         mSleepTime.tv_sec = 0;
         mSleepTime.tv_usec = (suseconds_t)(sleepTime.tv_nsec / 1000);
         select(0, nullptr, nullptr, nullptr, &mSleepTime);
+#endif
         if (!stConnected && tcRetryReq.load() && streamEnabled) {
             if (stNW.retryConnect() == 0) {
                 stConnected = true;
@@ -1195,10 +1213,6 @@ int main(int argc, char* argv[]) {
     tcThr.join();
     stWinThr.join();
     lcomt.join();
-#if defined(_WIN32) || defined(_WIN64)
-    if (wInitStatus == 0) {
-        WSACleanup();
-    }
-#endif
+
     return 0;
 }

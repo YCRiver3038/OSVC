@@ -46,5 +46,6 @@ std::atomic<uint32_t> aInRbStoredLength;
 std::atomic<uint32_t> aOutRbStoredLength;
 
 #if defined(_WIN32) || defined(_WIN64)
-typedef long suseconds_t;
+#include "synchapi.h"
+typedef DWORD suseconds_t;
 #endif
