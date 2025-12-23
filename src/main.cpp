@@ -674,7 +674,7 @@ int main(int argc, char* argv[]) {
         {"smoothing", no_argument, 0, 9005},
         {"ll", no_argument, 0, 9006},
         {"ch-together", no_argument, 0, 9007},
-        {"qhigh", no_argument, 0, 9008},
+        {"qlow", no_argument, 0, 9008},
         {"thru", no_argument, 0, 10001},
         {"sleep-time", required_argument, 0, 10002},
         {"no-local-out", no_argument, 0, 10003},
@@ -890,6 +890,9 @@ int main(int argc, char* argv[]) {
             case 9007: //ch-together
                 rbOptions |= RubberBand::RubberBandStretcher::OptionChannelsTogether;
                 break;
+            case 9008: //qlow
+                rbOptions ^= RubberBand::RubberBandStretcher::OptionPitchHighQuality;
+                break;
             case 10001: //thru
                 isTHRU.store(true);
                 break;
@@ -917,6 +920,19 @@ int main(int argc, char* argv[]) {
                 break;
         }
     } while (getoptStatus != -1);
+
+#if defined(_WIN32) || defined(_WIN64)
+    WORD wVersionRequested;
+    WSADATA wsaData;
+    int wInitStatus = 0;
+    char sockOptValue = 1;
+    wVersionRequested = MAKEWORD(2, 2);
+    wInitStatus = WSAStartup(wVersionRequested, &wsaData);
+    if (wInitStatus != 0) {
+        printf("WSASetup error: %d\n", wInitStatus);
+        return -1;
+    }
+#endif
 
     if (!nwEnabled) {
         loComEnabled = true;
@@ -1179,5 +1195,10 @@ int main(int argc, char* argv[]) {
     tcThr.join();
     stWinThr.join();
     lcomt.join();
+#if defined(_WIN32) || defined(_WIN64)
+    if (wInitStatus == 0) {
+        WSACleanup();
+    }
+#endif
     return 0;
 }

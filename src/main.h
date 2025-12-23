@@ -44,3 +44,7 @@ std::atomic<bool> isTHRU;
 std::atomic<float> oVolume;
 std::atomic<uint32_t> aInRbStoredLength;
 std::atomic<uint32_t> aOutRbStoredLength;
+
+#if defined(_WIN32) || defined(_WIN64)
+typedef long suseconds_t;
+#endif
