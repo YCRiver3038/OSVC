@@ -91,3 +91,7 @@ def BHWindow(wsize):#Blackman-Harris
 def DChebWindow(wsize):#Dolph-Chebyshev(100dB)
     warray = signal.get_window(('chebwin',100.0), wsize)
     return warray
+
+def ParzenWindow(wsize):
+    warray = signal.get_window('parzen', wsize)
+    return warray
