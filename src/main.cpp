@@ -519,27 +519,33 @@ void showHelp() {
 std::atomic<bool> tc1msecReq;
 std::atomic<bool> tcRefreshReq;
 std::atomic<bool> tcRetryReq;
-void timeCounter(struct timespec ts, int refreshTiming) {
-    long tElapsed1 = 0;
-    long tElapsedRf = 0;
-    long tElapsedRt = 0;
+
+void timeCounter(int refreshTiming) {
+    const suseconds_t tcShortestUsec = 1000;
+    struct timeval selts = {};
+    suseconds_t tElapsed1 = 0;
+    suseconds_t tElapsedRf = 0;
+    suseconds_t tElapsedRt = 0;
+
     while (!KeyboardInterrupt.load()) {
-        if (tElapsed1 > 1000000) { //1msec
+        selts.tv_sec = 0;
+        selts.tv_usec = 1000;
+        select(0, nullptr, nullptr, nullptr, &selts);
+        if (tElapsed1 >= 1000) { //1msec
             tc1msecReq.store(true);
             tElapsed1 = 0;
         }
-        if (tElapsedRf > refreshTiming) {
+        if (tElapsedRf >= (suseconds_t)refreshTiming) {
             tcRefreshReq.store(true);
             tElapsedRf = 0;
         }
-        if (tElapsedRt > 1000000000) {
+        if (tElapsedRt >= 1000000) {
             tcRetryReq.store(true);
             tElapsedRt = 0;
         }
-        nanosleep(&ts, nullptr);
-        tElapsed1 += ts.tv_nsec;
-        tElapsedRf += ts.tv_nsec;
-        tElapsedRt += ts.tv_nsec;
+        tElapsed1 += tcShortestUsec;
+        tElapsedRf += tcShortestUsec;
+        tElapsedRt += tcShortestUsec;
     }
 }
 
@@ -704,11 +710,15 @@ int main(int argc, char* argv[]) {
     double ioFs = 48000.0;
     std::string ioFormat("f32");
     int barMaxLength = 10;
-    int showInterval = 50000000;
+    suseconds_t showInterval = 50000;
 
     struct timespec sleepTime = {0};
-    sleepTime.tv_nsec = 500000; //1msec
-    
+    sleepTime.tv_nsec = 500000; //0.5msec
+
+    struct timeval mSleepTime;
+    mSleepTime.tv_sec = 0;
+    mSleepTime.tv_usec = (suseconds_t)(sleepTime.tv_nsec / 1000); //0.5msec
+
     std::string rcomBindAddr("127.0.0.1");
     std::string rcomBindPort("63297");
     
@@ -811,7 +821,7 @@ int main(int argc, char* argv[]) {
                 break;
             case 2008:
                 try {
-                    showInterval = std::stol(std::string(optarg)) * 1000;
+                    showInterval = (suseconds_t)std::stol(std::string(optarg));
                 } catch (const std::invalid_argument& e) {
                     printf("Invalid interval: %s\n", optarg);
                     return -1;
@@ -887,6 +897,7 @@ int main(int argc, char* argv[]) {
             case 10002: //sleep-time
                 try {
                     sleepTime.tv_nsec = std::stol(std::string(optarg)) * 1000;
+                    mSleepTime.tv_usec = (suseconds_t)(sleepTime.tv_nsec / 1000);
                 } catch (const std::invalid_argument& e) {
                     printf("Invalid value: %s\n", optarg);
                     return -1;
@@ -991,7 +1002,7 @@ int main(int argc, char* argv[]) {
 
     struct timespec tcSleepTime = {0};
     tcSleepTime.tv_nsec = 1000000; //1msec
-    std::thread tcThr(timeCounter, tcSleepTime, showInterval);
+    std::thread tcThr(timeCounter, showInterval);
 
     std::thread stWinThr(statusWindow,
                          aIn, aOut, rbst1,
@@ -1013,7 +1024,10 @@ int main(int argc, char* argv[]) {
 
     printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     while (!KeyboardInterrupt.load()) {
-        nanosleep(&sleepTime, nullptr);
+        //nanosleep(&sleepTime, nullptr);
+        mSleepTime.tv_sec = 0;
+        mSleepTime.tv_usec = (suseconds_t)(sleepTime.tv_nsec / 1000);
+        select(0, nullptr, nullptr, nullptr, &mSleepTime);
         if (!stConnected && tcRetryReq.load() && streamEnabled) {
             if (stNW.retryConnect() == 0) {
                 stConnected = true;
