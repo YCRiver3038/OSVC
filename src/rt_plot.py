@@ -8,7 +8,6 @@ import queue
 
 import pyaudio
 import numpy as np
-import pyqtgraph
 
 import plotter
 
