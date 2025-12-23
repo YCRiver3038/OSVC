@@ -985,7 +985,6 @@ int main(int argc, char* argv[]) {
     RubberBand::RubberBandStretcher* rbst1 = nullptr;
     rbst1 = new RubberBand::RubberBandStretcher((size_t)ioFs, ioChannel, rbOptions);
 
-    //network stNW(stDestAddr, stDestPort, SOCK_DGRAM);
     UDPClient stNW(stDestAddr, stDestPort);
     bool stConnected = false;
     
@@ -1024,7 +1023,6 @@ int main(int argc, char* argv[]) {
 
     printf("\x1b[2J\x1b[1;1H\x1b[0K== OSVC ==\n");
     while (!KeyboardInterrupt.load()) {
-        //nanosleep(&sleepTime, nullptr);
         mSleepTime.tv_sec = 0;
         mSleepTime.tv_usec = (suseconds_t)(sleepTime.tv_nsec / 1000);
         select(0, nullptr, nullptr, nullptr, &mSleepTime);
