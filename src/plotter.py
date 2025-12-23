@@ -19,8 +19,8 @@ class Plotter:
         self.fsample = 48000
         self.window_len = 4096
         self.freq_list = fft.rfftfreq(self.window_len, 1/self.fsample)
-        self.window_function = windowfuncs.DChebWindow(self.window_len)
-        self.window_function = self.window_function / np.mean(self.window_function)
+        self.window_function = None
+        self.set_window_function()
 
     def set_fsample(self, fs):
         self.fsample = fs
@@ -34,7 +34,7 @@ class Plotter:
         p_data = self.plot_data_queue.get()
         if self.window_len != len(p_data[0]) :
             self.window_len = len(p_data[0])
-            self.set_window_function(self.window_len)
+            self.set_window_function()
             self.freq_list = fft.rfftfreq(self.window_len, 1/self.fsample)
             self.L_plot.setXRange(np.log10(self.freq_list[1]), np.log10(self.fsample/2))
             self.R_plot.setXRange(np.log10(self.freq_list[1]), np.log10(self.fsample/2))

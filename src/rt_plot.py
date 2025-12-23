@@ -48,14 +48,6 @@ def thr_nw_get(bind_ip: str, bind_port: int,
     print(f"Binded address: {bind_ip}\nBinded port: {bind_port}\nFIFO data length: {plot_length}")
     #e_srv_sock.listen(1)
     try:
-        #while True:
-            #print("listening...")
-            #(rsock, c_addr) = e_srv_sock.accept()
-            #print(f"Accepted client: {c_addr}")
-            #rcv_thr = multiprocessing.Process(target=thr_recv,
-            #                                args=(rsock, to_plotter, plot_length, to_loopback),
-            #                                daemon=True)
-            #rcv_thr.start()
         thr_recv(e_srv_sock, to_plotter, plot_length, to_loopback)
     except KeyboardInterrupt:
         return
