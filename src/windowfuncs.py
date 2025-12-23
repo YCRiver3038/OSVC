@@ -10,11 +10,11 @@ from scipy import signal
 def SMAWindow(wsize):
     return np.ones(wsize)
 
-def kbd_window(wsize, k_beta=12):
+def kbd_window(wsize, k_beta: float=12.0):
     '''returns Kaiser-Bessel derived window function'''
     return signal.windows.kaiser_bessel_derived(wsize, np.pi*k_beta)
 
-def kaiser_window(wsize, beta=14):#Kaiser(beta=14)
+def kaiser_window(wsize, beta: float=14.0):#Kaiser(beta=14)
     '''returns Kaiser window function'''
     warray = np.zeros(wsize)
     warray = signal.get_window(('kaiser',beta), wsize)
@@ -65,7 +65,7 @@ def SineWindow(wsize):
         warray[i] = math.sin((math.pi*(i/(wsize-1))))
     return warray
 
-def PowSineWindow(wsize, npow=2):
+def PowSineWindow(wsize, npow: float=2.0):
     """
     ref: http://www.spcom.ecei.tohoku.ac.jp/~aito/kisosemi/slides2.pdf
        : https://en.wikipedia.org/wiki/Window_function
@@ -88,8 +88,8 @@ def BHWindow(wsize):#Blackman-Harris
     warray = signal.get_window('blackmanharris', wsize)
     return warray
 
-def DChebWindow(wsize):#Dolph-Chebyshev(100dB)
-    warray = signal.get_window(('chebwin',100.0), wsize)
+def DChebWindow(wsize, att: float=100.0):#Dolph-Chebyshev(100dB)
+    warray = signal.get_window(('chebwin', att), wsize)
     return warray
 
 def ParzenWindow(wsize):

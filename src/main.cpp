@@ -114,7 +114,6 @@ void tokenize(std::string& coms, std::vector<std::string>& tokenized) {
     return;
 }
 
-
 void comthr(bool execute=false) {
     if (!execute) {
         return;

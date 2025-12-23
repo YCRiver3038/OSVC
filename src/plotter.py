@@ -26,11 +26,10 @@ class Plotter:
         self.fsample = fs
 
     def set_window_function(self, idx: int=0):
-        self.window_function = windowfuncs.PowSineWindow(self.window_len, 3)
+        self.window_function = windowfuncs.PowSineWindow(self.window_len, 3.0)
         self.window_function = self.window_function / np.mean(self.window_function)
 
     def thr_plot(self):
-        #label_dc.setText("DC Component: %5.1f[dB]" % (data_to_plot[0]))
         try:
             p_data = self.plot_data_queue.get(block=False)
         except Exception:
@@ -49,6 +48,7 @@ class Plotter:
         #data_index_L = np.arange(0, len(fft_res_L), 1)
         #data_index_R = np.arange(0, len(fft_res_R), 1)
         #print(f"L len: {len(fft_res_L)}, R len: {len(fft_res_R)}\r")
+        #label_dc.setText(f"DC: {data_to_plot[0]:5.1}[dB]")
         self.L_curve.setData(self.freq_list[1:], 20*(np.log10(np.absolute(fft_res_L)+1e-100)[1:]))
         self.R_curve.setData(self.freq_list[1:], 20*(np.log10(np.absolute(fft_res_R)+1e-100)[1:]))
 
