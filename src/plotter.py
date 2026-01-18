@@ -6,7 +6,7 @@ from scipy import fft
 import windowfuncs
 
 class Plotter:
-    def __init__(self, h_upper, h_lower, d_queue: Queue):
+    def __init__(self, h_upper, h_lower, d_queue: Queue, fs=48000):
         self.plot_data_queue = d_queue
         self.scope_min = h_lower
         self.scope_max = h_upper
@@ -16,7 +16,7 @@ class Plotter:
         self.R_plot = None
         self.L_curve = None
         self.R_curve = None
-        self.fsample = 48000
+        self.fsample = fs
         self.window_len = 4096
         self.freq_list = fft.rfftfreq(self.window_len, 1/self.fsample)
         self.window_function = None

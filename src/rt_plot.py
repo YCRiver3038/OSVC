@@ -14,7 +14,7 @@ import plotter
 def thr_recv(e_rcv_sock,
              to_plotter: multiprocessing.Queue, plot_length: int,
              to_loopback: multiprocessing.Queue):
-    SOCK_BUF_SIZE = 8192
+    SOCK_BUF_SIZE = 131072
     o_array_L = np.zeros(plot_length)
     o_array_R = np.zeros(plot_length)
     while True:
@@ -42,7 +42,6 @@ def thr_recv(e_rcv_sock,
 def thr_nw_get(bind_ip: str, bind_port: int,
                to_plotter: multiprocessing.Queue, plot_length: int,
                to_loopback: multiprocessing.Queue):
-    SOCK_BUF_SIZE = 8192
     e_srv_sock = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
     e_srv_sock.bind((bind_ip, bind_port))
     print(f"Binded address: {bind_ip}\nBinded port: {bind_port}\nFIFO data length: {plot_length}")
@@ -52,8 +51,8 @@ def thr_nw_get(bind_ip: str, bind_port: int,
     except KeyboardInterrupt:
         return
 
-def thr_waveform_plot(print_queue: multiprocessing.Queue, f_rate: int):
-    w_plotter = plotter.Plotter(0.0, -140.0, print_queue)
+def thr_waveform_plot(print_queue: multiprocessing.Queue, f_rate: int, a_fs):
+    w_plotter = plotter.Plotter(0.0, -140.0, print_queue, fs=a_fs)
     w_plotter.thr_plot_execute(f_rate)
 
 class sound_output:
@@ -130,25 +129,26 @@ if __name__ == '__main__':
     aud_dev = 0
 
     ca_parser = argparse.ArgumentParser(description='')
-    ca_parser.add_argument("--src-address",  help="IPv4 Address to bind")
-    ca_parser.add_argument("--src-port", type=int, help="Port to bind")
+    ca_parser.add_argument("--bind-address",  help="IPv4 Address to bind")
+    ca_parser.add_argument("--bind-port", type=int, help="Port to bind")
     ca_parser.add_argument("--framerate", type=int, help="Plot framerate")
     ca_parser.add_argument("--plot-length", type=int, help="Plot data length")
-    ca_parser.add_argument("--aud-list", action='store_true', help="List audio device")
-    ca_parser.add_argument("--aud-fs", type=int, help="List audio device")
-    ca_parser.add_argument("--aud-dev", type=int, help="List audio device")
+    ca_parser.add_argument("--list-devices", action='store_true', help="List audio device")
+    ca_parser.add_argument("--fsample", type=int, help="Specify sampling frequency")
+    ca_parser.add_argument("--output-device", type=int, help="Specify audio device")
+    ca_parser.add_argument("--no-aud-out", action='store_true', help="Disable audio output")
 
     parsed_args = ca_parser.parse_args()
     parsed_args_dict = vars(parsed_args)
-    if parsed_args_dict['src_address'] is not None:
-        rcv_bind_ip = parsed_args_dict['src_address']
-    if parsed_args_dict['src_port'] is not None:
-        rcv_bind_port = parsed_args_dict['src_port']
+    if parsed_args_dict['bind_address'] is not None:
+        rcv_bind_ip = parsed_args_dict['bind_address']
+    if parsed_args_dict['bind_port'] is not None:
+        rcv_bind_port = parsed_args_dict['bind_port']
     if parsed_args_dict['framerate'] is not None:
         plot_framerate = parsed_args_dict['framerate']
     if parsed_args_dict['plot_length'] is not None:
         plot_data_length = parsed_args_dict['plot_length']
-    if parsed_args_dict['aud_list'] is True:
+    if parsed_args_dict['list_devices'] is True:
         audio_port = pyaudio.PyAudio()
         device_count = audio_port.get_device_count()
         print("\n Output list\n -------------")
@@ -162,11 +162,11 @@ if __name__ == '__main__':
                       f"default sample rate:{dev_info['defaultSampleRate']}")
         print(" -------------\n")
         sys.exit()
-    if parsed_args_dict['aud_fs'] is not None:
-        aud_fsample = parsed_args_dict['aud_fs']
-    if parsed_args_dict['aud_dev'] is not None:
-        aud_dev = parsed_args_dict['aud_dev']
-
+    if parsed_args_dict['fsample'] is not None:
+        aud_fsample = parsed_args_dict['fsample']
+    if parsed_args_dict['output_device'] is not None:
+        aud_dev = parsed_args_dict['output_device']
+    plot_fs = aud_fsample
     plot_data_queue = multiprocessing.Queue(maxsize=1)
     lb_data_queue = multiprocessing.Queue(maxsize=2)
     lb_event = multiprocessing.Event()
@@ -175,16 +175,17 @@ if __name__ == '__main__':
     e_recv_thr = multiprocessing.Process(target=thr_nw_get,
                                          args=(rcv_bind_ip, rcv_bind_port,
                                                plot_data_queue, plot_data_length,
-                                               lb_data_queue))
+                                               lb_data_queue), daemon=True)
     plot_thr = multiprocessing.Process(target=thr_waveform_plot,
-                                       args=(plot_data_queue, plot_framerate), daemon=True)
+                                       args=(plot_data_queue, plot_framerate, plot_fs), daemon=True)
     lb_thr = multiprocessing.Process(target=lb_starter,
                                      args=(aud_fsample, 2, pyaudio.paFloat32, aud_dev,
                                            lb_data_queue, lb_event, lb_vol), daemon=True)
     e_recv_thr.start()
     plot_thr.start()
-    lb_thr.start()
-    lb_event.set()
+    if parsed_args_dict['no_aud_out'] is None:
+        lb_thr.start()
+        lb_event.set()
     try:
         print("Waiting for termination...")
         while True:
