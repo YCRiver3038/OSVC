@@ -2,7 +2,7 @@
 #include <string>
 #include <thread>
 #include <cmath>
-#include <atomic>
+//#include <atomic>
 #include <vector>
 #include <map>
 #include <stdexcept>
@@ -27,23 +27,25 @@
 #include "remocon.h"
 #include "AudioManipulator.hpp"
 
+#include "SelfAtomic.h"
+
 #if defined(_WIN32) || defined(_WIN64)
 #else
 #include "memMappedFile.h"
 #endif
 
 // Global Variables
-std::atomic<double> rbPitchScale;
-std::atomic<double> rbFormantScale;
-std::atomic<double> rbTimeRatio;
-std::atomic<float> ioLatency;
-std::atomic<uint32_t> ioLatencySamples;
-std::atomic<float> iPeak;
-std::atomic<float> oPeak;
-std::atomic<bool> isTHRU;
-std::atomic<float> oVolume;
-std::atomic<uint32_t> aInRbStoredLength;
-std::atomic<uint32_t> aOutRbStoredLength;
+SelfAtomic<double> rbPitchScale;
+SelfAtomic<double> rbFormantScale;
+SelfAtomic<double> rbTimeRatio;
+SelfAtomic<float> ioLatency;
+SelfAtomic<uint32_t> ioLatencySamples;
+SelfAtomic<float> iPeak;
+SelfAtomic<float> oPeak;
+SelfAtomic<float> oVolume;
+SelfAtomic<uint32_t> aInRbStoredLength;
+SelfAtomic<uint32_t> aOutRbStoredLength;
+SelfAtomicBool isTHRU;
 
 #if defined(_WIN32) || defined(_WIN64)
 #include "synchapi.h"

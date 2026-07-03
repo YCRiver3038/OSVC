@@ -1,6 +1,6 @@
 #include "main.h"
 
-std::atomic<bool> KeyboardInterrupt;
+SelfAtomicBool KeyboardInterrupt;
 void kbiHandler(int signo) {
     KeyboardInterrupt.store(true);
     servTerminate = true;
@@ -515,9 +515,9 @@ void showHelp() {
     printf("                                         (intended for using with --show-buffer-length)\n");
 }
 
-std::atomic<bool> tc1msecReq;
-std::atomic<bool> tcRefreshReq;
-std::atomic<bool> tcRetryReq;
+SelfAtomic<bool> tc1msecReq;
+SelfAtomic<bool> tcRefreshReq;
+SelfAtomic<bool> tcRetryReq;
 
 #if defined(_WIN32) || defined(_WIN64)
 void timeCounter(suseconds_t refreshTiming) {

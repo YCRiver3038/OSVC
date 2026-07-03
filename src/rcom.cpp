@@ -1,7 +1,7 @@
 #include "getopt.h"
 #include "stdio.h"
 #include <string>
-#include <atomic>
+//#include <atomic>
 #include "signal.h"
 #include <vector>
 #include <iostream>
@@ -12,7 +12,9 @@
 #include "TCPClient.hpp"
 #include "remocon.h"
 
-std::atomic<bool> KeyboardInterrupt;
+#include "SelfAtomic.h"
+
+SelfAtomicBool KeyboardInterrupt;
 void kbiHandler(int signo) {
     KeyboardInterrupt.store(true);
     tcliTerminate = true;
